@@ -12,6 +12,8 @@ Stáhněte příslušný `.html` soubor a otevřete ho dvojklikem v prohlížeč
 
 ### svg2dxf.html — převodník SVG → DXF
 
+![svg2dxf](screenshots/svg2dxf.png)
+
 Hlavní nástroj. Převede vektorovou grafiku vyexportovanou z CorelDRAW (formát SVG) na DXF vhodný pro řezací a značkovací software.
 
 - Přetáhnete SVG, nastavíte šířku dokumentu (měřítko 1:1 v mm) a jemnost převodu křivek
@@ -28,6 +30,8 @@ Výstup je standardně **DXF R12** s entitami POLYLINE — nejkompatibilnější
 
 ### dxf_viewer.html — prohlížeč DXF
 
+![dxf_viewer](screenshots/dxf_viewer.png)
+
 Kontrola hotového DXF před posláním do stroje.
 
 - Přetáhnete DXF, zobrazí se na milimetrové mřížce
@@ -36,6 +40,8 @@ Kontrola hotového DXF před posláním do stroje.
 - Podporuje POLYLINE, LWPOLYLINE (i s oblouky), LINE, CIRCLE, ARC, POINT
 
 ### image_tool.html — výřez a konverze obrázků
+
+![image_tool](screenshots/image_tool.png)
 
 Úprava rastrových obrázků, včetně přípravy pro laserové gravírování.
 
@@ -46,6 +52,8 @@ Kontrola hotového DXF před posláním do stroje.
 - **Černobílý režim pro laser**: převod na čistě 2 barvy (černá + bílá) s nastavitelným prahem, možností invertování a rozptylu (dithering) pro fotky
 
 ### step-iges-viewer-offline.html — prohlížeč 3D modelů
+
+![step-iges](screenshots/step_iges.png)
 
 Prohlížeč 3D CAD souborů ve formátech **STEP** a **IGES**. (Větší soubor, protože obsahuje 3D knihovnu.)
 
