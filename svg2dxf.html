@@ -1,0 +1,1471 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SVG → DXF převodník</title>
+<style>
+  :root {
+    --bg: #171A1E;
+    --panel: #1F242A;
+    --panel-edge: #2C333B;
+    --ink: #E9ECEF;
+    --ink-dim: #9AA5B0;
+    --steel: #7FA6C9;
+    --cut: #FF5A38;
+    --grid: rgba(127, 166, 201, 0.10);
+    --grid-major: rgba(127, 166, 201, 0.22);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    padding: 24px 16px 48px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px; flex-wrap: wrap; }
+  h1 {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 26px; font-weight: 600; letter-spacing: 0.04em;
+  }
+  h1 .arrow { color: var(--cut); }
+  header .sub { color: var(--ink-dim); font-size: 14px; }
+  .privacy { color: var(--ink-dim); font-size: 12.5px; margin-bottom: 22px; }
+  .privacy b { color: var(--steel); font-weight: 500; }
+
+  .modeswitch { display: flex; align-items: center; gap: 0; margin-bottom: 18px; flex-wrap: wrap; }
+  .mode-btn {
+    background: var(--panel); border: 1px solid var(--panel-edge); color: var(--ink-dim);
+    padding: 7px 16px; cursor: pointer; font-size: 13.5px;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  .mode-btn:first-of-type { border-radius: 7px 0 0 7px; }
+  .mode-btn:last-of-type { border-radius: 0 7px 7px 0; border-left: none; }
+  .mode-btn.active { background: var(--cut); color: #1A0D08; border-color: transparent; font-weight: 600; }
+  .mode-desc { color: var(--ink-dim); font-size: 12.5px; margin-left: 12px; }
+
+  body.basic .adv { display: none !important; }
+  body.basic .adv-opt { display: none; }
+
+  #dropzone {
+    border: 1.5px dashed var(--panel-edge);
+    border-radius: 10px;
+    background: var(--panel);
+    padding: 46px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  #dropzone:hover, #dropzone.drag { border-color: var(--steel); background: #232A31; }
+  #dropzone:focus-visible { outline: 2px solid var(--steel); outline-offset: 2px; }
+  #dropzone .big { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 17px; margin-bottom: 6px; }
+  #dropzone .hint { color: var(--ink-dim); font-size: 13.5px; }
+  #fileInput { display: none; }
+
+  #workspace { display: none; margin-top: 20px; }
+  #viewport {
+    background:
+      linear-gradient(var(--grid-major) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+      #14171B;
+    background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+    border: 1px solid var(--panel-edge);
+    border-radius: 10px 10px 0 0;
+    position: relative;
+  }
+  #preview { display: block; width: 100%; height: 380px; cursor: grab; touch-action: none; }
+  #preview.panning { cursor: grabbing; }
+  #vhint {
+    position: absolute; right: 10px; bottom: 8px;
+    font-size: 11.5px; color: var(--ink-dim);
+    background: rgba(23,26,30,0.75); padding: 3px 8px; border-radius: 5px;
+    pointer-events: none;
+  }
+  #readout {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    padding: 12px 16px;
+    font-family: Consolas, 'Cascadia Mono', monospace;
+    font-size: 13px;
+    display: flex; gap: 26px; flex-wrap: wrap;
+  }
+  #readout .cell .lbl { color: var(--ink-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+  #readout .cell .val { color: var(--steel); font-size: 15px; margin-top: 2px; }
+
+  #groupPanel { display: none; margin-top: 14px; }
+  #groupPanel.show { display: block; }
+  #layerPanel { display: none; margin-top: 14px; }
+  #layerPanel.show { display: block; }
+  #layerInfo { display: flex; gap: 8px; flex-wrap: wrap; }
+  .lchip {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--panel); border: 1px solid var(--panel-edge); color: var(--ink);
+    border-radius: 7px; padding: 8px 13px;
+    font-family: Consolas, 'Cascadia Mono', monospace; font-size: 13px;
+  }
+  .lchip .sw { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+  .lchip .cnt { color: var(--ink-dim); font-size: 11.5px; }
+  .lchip.off { opacity: 0.4; }
+  .lchip.off .sw { background: #555 !important; }
+
+  .gp-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .sel-info { color: var(--steel); font-family: Consolas, monospace; font-size: 12.5px; margin-right: 4px; }
+  .gp-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+  .gbtn.gsel.picked { border-color: #5EE68A; background: rgba(94,230,138,0.14); color: #B6F5CC; }
+  .gbtn.gsel.picked .sw { box-shadow: 0 0 0 2px rgba(94,230,138,0.5); }
+  .gp-head { color: var(--ink-dim); font-size: 12.5px; margin-bottom: 8px; }
+  #groupList { display: flex; gap: 8px; flex-wrap: wrap; }
+  .gbtn {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--panel); border: 1px solid var(--panel-edge); color: var(--ink);
+    border-radius: 7px; padding: 8px 13px; cursor: pointer;
+    font-family: Consolas, 'Cascadia Mono', monospace; font-size: 13px;
+  }
+  .gbtn:hover { border-color: var(--steel); }
+  .gbtn .sw { width: 10px; height: 10px; border-radius: 50%; background: var(--cut); flex: none; }
+  .gbtn .cnt { color: var(--ink-dim); font-size: 11.5px; }
+  .gbtn.all { background: rgba(255,90,56,0.14); border-color: transparent; color: #FFB4A3; }
+  .gbtn.hi { outline: 2px solid var(--steel); }
+
+  .controls {
+    display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap;
+    margin-top: 18px;
+  }
+  .field label { display: block; font-size: 12px; color: var(--ink-dim); margin-bottom: 5px; }
+  .field input, .field select {
+    background: var(--panel); color: var(--ink);
+    border: 1px solid var(--panel-edge); border-radius: 7px;
+    padding: 9px 11px; font-family: Consolas, 'Cascadia Mono', monospace; font-size: 14px;
+    width: 130px;
+  }
+  .field select { width: auto; min-width: 210px; }
+  .field input:focus, .field select:focus { outline: 2px solid var(--steel); outline-offset: 1px; border-color: transparent; }
+  .chkline {
+    display: flex; align-items: center; gap: 7px;
+    background: #14171B; border: 1px solid var(--panel-edge); border-radius: 7px;
+    padding: 9px 11px; font-size: 13px; color: var(--ink); cursor: pointer;
+    font-family: Consolas, 'Cascadia Mono', monospace;
+  }
+  .chkline input { accent-color: var(--cut); width: 15px; height: 15px; cursor: pointer; }
+  #downloadBtn {
+    background: var(--cut); color: #1A0D08;
+    border: none; border-radius: 7px;
+    font-family: 'Segoe UI', system-ui, sans-serif; font-weight: 600; font-size: 15px;
+    letter-spacing: 0.03em;
+    padding: 11px 26px; cursor: pointer;
+  }
+  #downloadBtn:hover { filter: brightness(1.1); }
+  #downloadBtn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .controls .namefield { margin-left: auto; }
+  .again {
+    background: none; border: 1px solid var(--panel-edge); color: var(--ink-dim);
+    border-radius: 7px; padding: 11px 16px; cursor: pointer; font-size: 13.5px;
+  }
+  .again:hover { color: var(--ink); border-color: var(--steel); }
+
+  #msg { margin-top: 14px; font-size: 13.5px; border-radius: 7px; padding: 10px 14px; display: none; }
+  #msg.warn { display: block; background: rgba(255, 90, 56, 0.12); color: #FFB4A3; }
+  #msg.err  { display: block; background: rgba(255, 90, 56, 0.20); color: #FF8A70; }
+
+  footer { margin-top: 34px; color: var(--ink-dim); font-size: 12.5px; line-height: 1.6; }
+  footer code { font-family: Consolas, 'Cascadia Mono', monospace; color: var(--steel); }
+  #hiddenHost { position: absolute; width: 0; height: 0; overflow: hidden; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    	
+	<span class="sub">CorelDraw </span> 
+	<h1>SVG <span class="arrow">→</span> DXF</h1>
+	<span class="sub">Laser</span>
+    	
+  </header>
+  <p class="privacy">Vše probíhá <b>ve vašem prohlížeči</b> — soubor se nikam neodesílá.</p>
+
+  <div class="modeswitch">
+    <button id="modeBasic" class="mode-btn active">Základní</button><button id="modeAdvanced" class="mode-btn">Rozšířené</button>
+    <span class="mode-desc" id="modeDesc">Jen to podstatné pro laser: výběr, vrstvy, DXF.</span>
+  </div>
+
+  <div id="dropzone" tabindex="0" role="button" aria-label="Nahrát SVG soubor">
+    <div class="big">Přetáhněte sem SVG soubor</div>
+    <div class="hint">nebo klikněte pro výběr · text v Corelu nejdřív převeďte na křivky (Ctrl+Q)</div>
+  </div>
+  <input type="file" id="fileInput" accept=".svg,image/svg+xml">
+
+  <div id="workspace">
+    <div id="viewport"><canvas id="preview"></canvas><div id="vhint">kolečko = zoom · tažení = posun · dvojklik = celek</div></div>
+    <div id="readout">
+      <div class="cell"><div class="lbl">Křivek</div><div class="val" id="roCurves">–</div></div>
+      <div class="cell"><div class="lbl">Vrstev</div><div class="val" id="roLayers">–</div></div>
+      <div class="cell"><div class="lbl">Bodů</div><div class="val" id="roPoints">–</div></div>
+      <div class="cell"><div class="lbl">Rozměr</div><div class="val" id="roSize">–</div></div>
+      <div class="cell"><div class="lbl">Formát</div><div class="val">DXF R12</div></div>
+    </div>
+
+    <div id="layerPanel">
+      <div class="gp-head">Vrstvy pro Magic Mark (přiřadíte jim nástroje při importu):</div>
+      <div id="layerInfo"></div>
+    </div>
+
+    <div id="groupPanel">
+      <div class="gp-head">Skupiny z Corelu — klikni pro výběr, pak stáhni vybrané (najetím se zvýrazní v náhledu):</div>
+      <div id="groupList"></div>
+    </div>
+
+    <div class="controls">
+      <div class="field">
+        <label for="widthMm">Šířka dokumentu (mm)</label>
+        <input type="number" id="widthMm" step="0.1" min="0.1">
+      </div>
+      <div class="field">
+        <label for="tolerance">Jemnost křivek</label>
+        <select id="tolerance">
+          <option value="0.5">Hrubá (0,5 mm)</option>
+          <option value="0.2" selected>Standardní (0,2 mm)</option>
+          <option value="0.1">Jemná (0,1 mm)</option>
+          <option value="0.05">Velmi jemná (0,05 mm)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="layerMode">Vrstvy</label>
+        <select id="layerMode">
+          <option value="single" selected>Vše dohromady</option>
+          <option value="blocks" class="adv-opt">Skupiny z Corelu jako bloky</option>
+          <option value="dxf">Jedno DXF s vrstvami</option>
+          <option value="files">Samostatný soubor pro každou vrstvu</option>
+          <option value="curves" class="adv-opt">Samostatný soubor pro každou křivku (ZIP)</option>
+        </select>
+      </div>
+      <div class="field adv">
+        <label for="fillsChk">Výplně</label>
+        <label class="chkline"><input type="checkbox" id="fillsChk"> exportovat (HATCH, R2000)</label>
+      </div>
+      <button class="again" id="againBtn">Jiný soubor</button>
+      <div class="field namefield">
+        <label for="fileName">Název souboru</label>
+        <input type="text" id="fileName" placeholder="vykres" spellcheck="false">
+      </div>
+      <button id="downloadBtn">Stáhnout DXF</button>
+    </div>
+  </div>
+
+  <div id="msg"></div>
+
+  <footer>
+    Výstupem je DXF R12 s entitami POLYLINE — nejkompatibilnější formát pro řezací software.<br>
+    Se zapnutými výplněmi se generuje DXF R2000 s entitami <code>HATCH</code> (starší stroje ho nemusí umět načíst).<br>
+    Křivky jsou rozděleny podle zvolené jemnosti.<br>
+	Jednotky: <code>mm</code>, měřítko 1:1 podle šířky dokumentu.
+  </footer>
+</div>
+<div id="hiddenHost" aria-hidden="true"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var dropzone = document.getElementById("dropzone");
+  var fileInput = document.getElementById("fileInput");
+  var workspace = document.getElementById("workspace");
+  var canvas = document.getElementById("preview");
+  var msg = document.getElementById("msg");
+  var widthInput = document.getElementById("widthMm");
+  var tolSelect = document.getElementById("tolerance");
+  var layerModeSel = document.getElementById("layerMode");
+
+  var state = { svgText: null, fileName: "vykres", polylines: [], layers: [], docWmm: 0, docHmm: 0 };
+
+  // barvy vrstev: ACI kód pro DXF + hex pro náhled
+  var LAYER_COLORS = [
+    { aci: 1, hex: "#FF5A38" }, { aci: 3, hex: "#4CD964" },
+    { aci: 5, hex: "#5B8CFF" }, { aci: 2, hex: "#FFD60A" },
+    { aci: 6, hex: "#FF66D9" }, { aci: 4, hex: "#38D9E8" },
+    { aci: 30, hex: "#FF9F0A" }, { aci: 7, hex: "#E9ECEF" }
+  ];
+
+  var UNIT_MM = { mm: 1, cm: 10, in: 25.4, pt: 25.4 / 72, pc: 25.4 / 6, px: 25.4 / 96, "": 25.4 / 96 };
+
+  function showMsg(text, cls) {
+    msg.textContent = text || "";
+    msg.className = cls || "";
+  }
+
+  // ---------- načtení souboru ----------
+  function handleFile(file) {
+    if (!file) return;
+    if (!/\.svg$/i.test(file.name) && file.type !== "image/svg+xml") {
+      showMsg("Tohle není SVG soubor. Exportujte z Corelu přes Soubor → Exportovat → SVG.", "err");
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      state.svgText = reader.result;
+      state.fileName = file.name.replace(/\.svg$/i, "");
+      var nm = document.getElementById("fileName");
+      if (nm) nm.value = state.fileName;
+      processSvg(true);
+    };
+    reader.readAsText(file);
+  }
+
+  dropzone.addEventListener("click", function () { fileInput.click(); });
+  dropzone.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+  });
+  fileInput.addEventListener("change", function () { handleFile(fileInput.files[0]); fileInput.value = ""; });
+  ["dragover", "dragenter"].forEach(function (ev) {
+    dropzone.addEventListener(ev, function (e) { e.preventDefault(); dropzone.classList.add("drag"); });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    dropzone.addEventListener(ev, function (e) { e.preventDefault(); dropzone.classList.remove("drag"); });
+  });
+  dropzone.addEventListener("drop", function (e) {
+    handleFile(e.dataTransfer.files && e.dataTransfer.files[0]);
+  });
+  document.getElementById("againBtn").addEventListener("click", function () {
+    workspace.style.display = "none";
+    showMsg("");
+    fileInput.click();
+  });
+  widthInput.addEventListener("change", function () { if (state.svgText) processSvg(false); });
+  tolSelect.addEventListener("change", function () { if (state.svgText) processSvg(false); });
+
+  var nameInput = document.getElementById("fileName");
+  function sanitizeName(s) {
+    s = (s || "").trim().replace(/\.dxf$/i, "");
+    s = s.replace(/[\/\\:*?"<>|]+/g, "_");   // znaky nepovolené v názvu souboru
+    return s || "vykres";
+  }
+  nameInput.addEventListener("input", function () {
+    state.fileName = sanitizeName(nameInput.value);
+    updateSavePanel();  // ať se aktualizují popisky/tlačítka
+  });
+  layerModeSel.addEventListener("change", function () {
+    if (workspace.style.display === "block") drawPreview();
+  });
+
+  // ---------- detekce vrstev (skupiny <g>, které Corel exportuje) ----------
+  function findLayerNodes(svg) {
+    function groups(parent) {
+      return [].filter.call(parent.children, function (c) {
+        return c.tagName && c.tagName.toLowerCase() === "g";
+      });
+    }
+    var tops = groups(svg);
+    // Corel často vše zabalí do jedné vnější skupiny — vrstvy jsou pak uvnitř
+    if (tops.length === 1) {
+      var inner = groups(tops[0]);
+      if (inner.length >= 2) return inner;
+    }
+    return tops;
+  }
+
+  function layerNameOf(node, idx) {
+    var raw = node.getAttribute("inkscape:label")
+      || node.getAttributeNS("http://www.inkscape.org/namespaces/inkscape", "label")
+      || node.getAttribute("id") || "";
+    // Corel kóduje mezery apod. jako _x0020_
+    raw = raw.replace(/_x([0-9A-Fa-f]{4})_/g, function (m, h) {
+      return String.fromCharCode(parseInt(h, 16));
+    });
+    raw = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // odstranit diakritiku
+    raw = raw.replace(/[^A-Za-z0-9_$-]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
+    return raw.slice(0, 31) || ("VRSTVA_" + (idx + 1));
+  }
+
+  // ---------- detekce Corel skupin (pro export jako bloky) ----------
+  // Corel exportuje vrstvy jako vnější <g> a skupiny jako vnitřní <g>.
+  // Bereme nejbližší (nejvnitřnější) <g>, který má >=2 tvary a NEobsahuje další
+  // vícetvarové podskupiny — to je skutečná skupina objektů, ne vrstva.
+  function groupNodeOf(el, svg) {
+    var p = el.parentNode;
+    while (p && p !== svg && p.tagName) {
+      if (p.tagName.toLowerCase() === "g") {
+        var shapes = p.querySelectorAll("path, rect, circle, ellipse, line, polyline, polygon");
+        if (shapes.length >= 2) {
+          // je tato skupina "listová"? (nemá uvnitř další skupinu s >=2 tvary)
+          var subGroups = p.querySelectorAll("g");
+          var hasRealSub = false;
+          for (var s = 0; s < subGroups.length; s++) {
+            if (subGroups[s].querySelectorAll("path, rect, circle, ellipse, line, polyline, polygon").length >= 2) {
+              hasRealSub = true; break;
+            }
+          }
+          if (!hasRealSub) return p; // nejvnitřnější skutečná skupina
+        }
+      }
+      p = p.parentNode;
+    }
+    return null;
+  }
+
+  function groupKeyOf(node) {
+    if (!node) return null;
+    var raw = node.getAttribute("id") || "";
+    raw = raw.replace(/_x([0-9A-Fa-f]{4})_/g, function (m, h) {
+      return String.fromCharCode(parseInt(h, 16));
+    });
+    raw = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    raw = raw.replace(/[^A-Za-z0-9_$-]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
+    return raw.slice(0, 28) || "SKUPINA";
+  }
+
+  // ---------- pomocné převody tvarů na path ----------
+  // rozdělí path data na jednotlivé podcesty; každá začíná absolutním M
+  function splitSubpaths(d) {
+    // tokenizace: příkaz nebo číslo
+    var tokens = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:[eE][-+]?\d+)?/g);
+    if (!tokens) return [d];
+    var subs = [];
+    var cur = "";
+    var cmd = "";
+    var curX = 0, curY = 0, startX = 0, startY = 0;
+    var i = 0;
+
+    function readNum() { return parseFloat(tokens[i++]); }
+
+    while (i < tokens.length) {
+      var t = tokens[i];
+      if (/[a-zA-Z]/.test(t)) { cmd = t; i++; }
+
+      if (cmd === "M" || cmd === "m") {
+        if (cur) subs.push(cur);
+        var x = readNum(), y = readNum();
+        if (cmd === "m") { x += curX; y += curY; }
+        curX = startX = x; curY = startY = y;
+        cur = "M " + x + " " + y + " ";
+        cmd = (cmd === "m") ? "l" : "L"; // další souřadnice po M jsou lineto
+        continue;
+      }
+
+      // ostatní příkazy jen zkopírujeme a průběžně sledujeme aktuální bod
+      cur += cmd + " ";
+      var absC = cmd.toUpperCase();
+      if (absC === "Z") { curX = startX; curY = startY; continue; }
+      var params = { L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7 }[absC] || 0;
+      var vals = [];
+      for (var k = 0; k < params; k++) vals.push(readNum());
+      cur += vals.join(" ") + " ";
+      // aktualizace aktuálního bodu
+      var rel = (cmd === cmd.toLowerCase());
+      if (absC === "H") { curX = rel ? curX + vals[0] : vals[0]; }
+      else if (absC === "V") { curY = rel ? curY + vals[0] : vals[0]; }
+      else if (params >= 2) {
+        var nx = vals[params - 2], ny = vals[params - 1];
+        curX = rel ? curX + nx : nx;
+        curY = rel ? curY + ny : ny;
+      }
+    }
+    if (cur) subs.push(cur);
+    return subs.length ? subs : [d];
+  }
+
+  function shapeToPathD(el) {
+    var t = el.tagName.toLowerCase();
+    function n(name, def) { var v = parseFloat(el.getAttribute(name)); return isNaN(v) ? (def || 0) : v; }
+    if (t === "path") return el.getAttribute("d") || "";
+    if (t === "line") return "M " + n("x1") + " " + n("y1") + " L " + n("x2") + " " + n("y2");
+    if (t === "polyline" || t === "polygon") {
+      var pts = (el.getAttribute("points") || "").trim().split(/[\s,]+/).map(parseFloat);
+      if (pts.length < 4) return "";
+      var d = "M " + pts[0] + " " + pts[1];
+      for (var i = 2; i + 1 < pts.length; i += 2) d += " L " + pts[i] + " " + pts[i + 1];
+      if (t === "polygon") d += " Z";
+      return d;
+    }
+    if (t === "rect") {
+      var x = n("x"), y = n("y"), w = n("width"), h = n("height");
+      var rx = n("rx"), ry = n("ry");
+      if (rx && !ry) ry = rx; if (ry && !rx) rx = ry;
+      rx = Math.min(rx, w / 2); ry = Math.min(ry, h / 2);
+      if (w <= 0 || h <= 0) return "";
+      if (!rx) return "M " + x + " " + y + " H " + (x + w) + " V " + (y + h) + " H " + x + " Z";
+      return "M " + (x + rx) + " " + y +
+        " H " + (x + w - rx) + " A " + rx + " " + ry + " 0 0 1 " + (x + w) + " " + (y + ry) +
+        " V " + (y + h - ry) + " A " + rx + " " + ry + " 0 0 1 " + (x + w - rx) + " " + (y + h) +
+        " H " + (x + rx) + " A " + rx + " " + ry + " 0 0 1 " + x + " " + (y + h - ry) +
+        " V " + (y + ry) + " A " + rx + " " + ry + " 0 0 1 " + (x + rx) + " " + y + " Z";
+    }
+    if (t === "circle" || t === "ellipse") {
+      var cx = n("cx"), cy = n("cy");
+      var erx = t === "circle" ? n("r") : n("rx");
+      var eryv = t === "circle" ? n("r") : n("ry");
+      if (erx <= 0 || eryv <= 0) return "";
+      return "M " + (cx - erx) + " " + cy +
+        " A " + erx + " " + eryv + " 0 1 0 " + (cx + erx) + " " + cy +
+        " A " + erx + " " + eryv + " 0 1 0 " + (cx - erx) + " " + cy + " Z";
+    }
+    return "";
+  }
+
+  // ---------- hlavní zpracování ----------
+  function processSvg(fresh) {
+    var host = document.getElementById("hiddenHost");
+    host.innerHTML = "";
+    showMsg("");
+
+    var doc;
+    try {
+      doc = new DOMParser().parseFromString(state.svgText, "image/svg+xml");
+    } catch (e) { showMsg("SVG se nepodařilo přečíst: " + e.message, "err"); return; }
+    var src = doc.documentElement;
+    if (!src || src.tagName.toLowerCase() !== "svg" || doc.querySelector("parsererror")) {
+      showMsg("Soubor není platné SVG.", "err"); return;
+    }
+
+    var svg = document.importNode(src, true);
+    host.appendChild(svg);
+
+    // viewBox + fyzická šířka
+    var vb = null;
+    var vbAttr = svg.getAttribute("viewBox");
+    if (vbAttr) {
+      var p = vbAttr.trim().split(/[\s,]+/).map(parseFloat);
+      if (p.length === 4 && p[2] > 0 && p[3] > 0) vb = { x: p[0], y: p[1], w: p[2], h: p[3] };
+    }
+    function parseLen(v) {
+      var m = /^\s*([0-9.eE+-]+)\s*([a-z%]*)\s*$/.exec(v || "");
+      return m ? { n: parseFloat(m[1]), u: m[2].toLowerCase() } : null;
+    }
+    var wAttr = parseLen(src.getAttribute("width"));
+    var hAttr = parseLen(src.getAttribute("height"));
+    if (!vb) {
+      if (wAttr && hAttr && wAttr.n > 0 && hAttr.n > 0) vb = { x: 0, y: 0, w: wAttr.n, h: hAttr.n };
+      else { showMsg("SVG nemá viewBox ani rozměry — nelze určit velikost.", "err"); return; }
+    }
+
+    var autoWmm = null;
+    if (wAttr && wAttr.n > 0 && UNIT_MM[wAttr.u] !== undefined) autoWmm = wAttr.n * UNIT_MM[wAttr.u];
+    var docWmm = fresh ? (autoWmm || vb.w * UNIT_MM.px) : parseFloat(widthInput.value);
+    if (!(docWmm > 0)) docWmm = autoWmm || vb.w * UNIT_MM.px;
+    if (fresh) widthInput.value = docWmm.toFixed(2).replace(/\.?0+$/, "");
+
+    var scale = docWmm / vb.w;           // mm na jednu SVG jednotku
+    var tolMm = parseFloat(tolSelect.value);
+
+    // normalizace: viewport px == jednotky viewBoxu, aby getCTM vracel souřadnice viewBoxu
+    svg.setAttribute("width", vb.w);
+    svg.setAttribute("height", vb.h);
+    svg.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h);
+    svg.setAttribute("preserveAspectRatio", "none");
+
+    if (svg.querySelector("text, tspan")) {
+      showMsg("Pozor: SVG obsahuje text, ten se do DXF nepřenese. V Corelu ho před exportem převeďte na křivky (Ctrl+Q).", "warn");
+    }
+
+    var sampler = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    sampler.setAttribute("fill", "none");
+    svg.appendChild(sampler);
+
+    var els = svg.querySelectorAll("path, rect, circle, ellipse, line, polyline, polygon");
+    var polylines = [];
+    var totalPts = 0;
+
+    // vrstvy: název + barva; index 0 je rezervní pro objekty mimo skupiny
+    var layerNodes = findLayerNodes(svg);
+    var layers = [];
+    var layerIdxByName = {};
+    function ensureLayer(name) {
+      if (layerIdxByName[name] === undefined) {
+        var c = LAYER_COLORS[layers.length % LAYER_COLORS.length];
+        layerIdxByName[name] = layers.length;
+        layers.push({ name: name, aci: c.aci, hex: c.hex });
+      }
+      return layerIdxByName[name];
+    }
+    function layerIdxOf(el) {
+      for (var j = 0; j < layerNodes.length; j++) {
+        if (layerNodes[j].contains(el)) return ensureLayer(layerNameOf(layerNodes[j], j));
+      }
+      return ensureLayer("KRESBA");
+    }
+
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (el === sampler) continue;
+      if (el.closest("defs, clipPath, mask, symbol, pattern, marker")) continue;
+
+      var layerIdx = layerIdxOf(el);
+
+      var gNode = groupNodeOf(el, svg);
+      var groupKey = null;
+      if (gNode) {
+        if (!gNode.__gk) gNode.__gk = groupKeyOf(gNode) + "_" + i;
+        groupKey = gNode.__gk;
+      }
+
+      // detekce výplně (pro HATCH export a náhled)
+      var fillAci = null, fillHex = null;
+      var cs = window.getComputedStyle(el);
+      var fillRaw = cs.fill;
+      if (fillRaw && fillRaw !== "none" && parseFloat(cs.fillOpacity || "1") > 0) {
+        var fm = fillRaw.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/);
+        if (fm) {
+          fillAci = rgbToAci(+fm[1], +fm[2], +fm[3]);
+          fillHex = "rgb(" + fm[1] + "," + fm[2] + "," + fm[3] + ")";
+        }
+      }
+      var meta = { layer: layerIdx, grp: i, aci: fillAci, hex: fillHex, group: groupKey };
+
+      var d = shapeToPathD(el);
+      if (!d) continue;
+
+      // rozdělit na podcesty podle příkazů M/m (jednoznačné hranice, žádné hádání skoků)
+      var subPaths = splitSubpaths(d);
+
+      for (var sp = 0; sp < subPaths.length; sp++) {
+        sampler.setAttribute("d", subPaths[sp]);
+
+        var len;
+        try { len = sampler.getTotalLength(); } catch (e) { continue; }
+        if (!len || !isFinite(len) || len < 1e-9) continue;
+
+        var ctm = el.getCTM();
+        var stepUu = tolMm / scale;                     // krok v SVG jednotkách
+        var steps = Math.min(Math.max(Math.ceil(len / stepUu), 1), 40000);
+        var step = len / steps;
+
+        var current = [];
+        var prev = null;
+        for (var s = 0; s <= steps; s++) {
+          var pt = sampler.getPointAtLength(Math.min(s * step, len));
+          var X = pt.x, Y = pt.y;
+          if (ctm) { X = ctm.a * pt.x + ctm.c * pt.y + ctm.e; Y = ctm.b * pt.x + ctm.d * pt.y + ctm.f; }
+          var mmX = (X - vb.x) * scale;
+          var mmY = (vb.y + vb.h - Y) * scale;          // překlopení osy Y
+          if (!prev || Math.hypot(mmX - prev[0], mmY - prev[1]) > 1e-6) {
+            current.push([mmX, mmY]);
+            prev = [mmX, mmY];
+          }
+        }
+        pushPolyline(polylines, current, meta);
+      }
+    }
+
+    host.innerHTML = "";
+
+    if (!polylines.length) {
+      showMsg("V souboru nebyly nalezeny žádné křivky k převodu.", "err");
+      return;
+    }
+    polylines.forEach(function (pl) { totalPts += pl.pts.length; });
+
+    state.polylines = polylines;
+    state.layers = layers;
+    state.docWmm = docWmm;
+    state.docHmm = docWmm * vb.h / vb.w;
+    selPoly = {};            // nový soubor = zrušit výběr
+    state._groupSizes = null;
+
+    document.getElementById("roCurves").textContent = polylines.length;
+    document.getElementById("roLayers").textContent = layers.length;
+    document.getElementById("roPoints").textContent = totalPts;
+    document.getElementById("roSize").textContent =
+      state.docWmm.toFixed(1) + " × " + state.docHmm.toFixed(1) + " mm";
+
+    workspace.style.display = "block";
+    fitPreview();
+    buildGroupPanel();
+    buildLayerPanel();
+  }
+
+  // ---------- panel vrstev (klikací zap/vyp, export jen zapnutých) ----------
+  function buildLayerPanel() {
+    var panel = document.getElementById("layerPanel");
+    var info = document.getElementById("layerInfo");
+    info.innerHTML = "";
+    if (state.layers.length < 2) { panel.className = ""; return; }
+
+    var counts = {};
+    state.polylines.forEach(function (pl) { counts[pl.layer] = (counts[pl.layer] || 0) + 1; });
+
+    // výchozí viditelnost: pomocné vrstvy (FREECAD, náhled apod.) vypnout
+    state.layers.forEach(function (ly) {
+      if (ly.visible === undefined) {
+        ly.visible = !/freecad|náhled|nahled|pomoc|ref/i.test(ly.name);
+      }
+    });
+
+    state.layers.forEach(function (ly, idx) {
+      var chip = document.createElement("span");
+      chip.className = "lchip" + (ly.visible ? "" : " off");
+      chip.style.cursor = "pointer";
+      var sw = document.createElement("span");
+      sw.className = "sw"; sw.style.background = ly.hex;
+      chip.appendChild(sw);
+      chip.appendChild(document.createTextNode(ly.name));
+      var cnt = document.createElement("span");
+      cnt.className = "cnt";
+      cnt.textContent = (counts[idx] || 0) + " kř.";
+      chip.appendChild(cnt);
+      chip.addEventListener("click", function () {
+        ly.visible = !ly.visible;
+        chip.className = "lchip" + (ly.visible ? "" : " off");
+        drawPreview();
+        updateLayerDlBtn();
+      });
+      info.appendChild(chip);
+    });
+
+    var dl = document.createElement("button");
+    dl.className = "gbtn all";
+    dl.id = "layerDlBtn";
+    dl.addEventListener("click", function () {
+      var vis = state.layers.filter(function (l) { return l.visible; });
+      if (!vis.length) { showMsg("Není zapnutá žádná vrstva k exportu.", "warn"); return; }
+      // přemapovat indexy vrstev na jen zapnuté
+      var idxMap = {}; vis.forEach(function (l, i) { idxMap[state.layers.indexOf(l)] = i; });
+      var polys = state.polylines.filter(function (pl) { return state.layers[pl.layer].visible; })
+        .map(function (pl) {
+          var c = Object.create(pl); c.layer = idxMap[pl.layer]; return c;
+        });
+      downloadDxf(buildDxf(polys, vis), state.fileName + ".dxf");
+    });
+    info.appendChild(dl);
+
+    panel.className = "show";
+    updateLayerDlBtn();
+  }
+
+  function updateLayerDlBtn() {
+    var dl = document.getElementById("layerDlBtn");
+    if (!dl) return;
+    var vis = state.layers.filter(function (l) { return l.visible; });
+    dl.textContent = vis.length
+      ? "⬇ DXF s vrstvami " + vis.map(function (l) { return l.name; }).join(" / ")
+      : "⬇ (zapněte aspoň jednu vrstvu)";
+  }
+
+  // ---------- DXF z libovolné sady křivek se zachováním vrstev ----------
+  function buildDxfWithLayers(polys) {
+    // které vrstvy se v křivkách vyskytují (a jsou zapnuté)
+    var usedIdx = [];
+    var seen = {};
+    polys.forEach(function (pl) {
+      var ly = state.layers[pl.layer];
+      if (ly && ly.visible === false) return;
+      if (!seen[pl.layer]) { seen[pl.layer] = true; usedIdx.push(pl.layer); }
+    });
+    if (usedIdx.length < 2) {
+      // jen jedna vrstva -> vrstva "0", jako dřív
+      var single = polys.filter(function (pl) {
+        var ly = state.layers[pl.layer]; return !(ly && ly.visible === false);
+      });
+      return buildDxf(single, []);
+    }
+    var table = usedIdx.map(function (i) { return state.layers[i]; });
+    var idxMap = {}; usedIdx.forEach(function (gi, i) { idxMap[gi] = i; });
+    var mapped = polys.filter(function (pl) {
+      var ly = state.layers[pl.layer]; return !(ly && ly.visible === false);
+    }).map(function (pl) {
+      var c = Object.create(pl); c.layer = idxMap[pl.layer]; return c;
+    });
+    return buildDxf(mapped, table);
+  }
+
+
+  // výběr křivek v náhledu: set indexů do state.polylines
+  var selPoly = {};    // index -> true
+
+  function selectionActive() {
+    for (var k in selPoly) if (selPoly[k]) return true;
+    return false;
+  }
+
+  function clearSelection() {
+    selPoly = {};
+    updateSavePanel();
+    drawPreview();
+  }
+
+  // vybrané křivky jako pole objektů
+  function selectedPolylines() {
+    var out = [];
+    state.polylines.forEach(function (pl, i) {
+      if (selPoly[i] && !(state.layers[pl.layer] && state.layers[pl.layer].visible === false)) out.push(pl);
+    });
+    return out;
+  }
+
+  function buildGroupPanel() { updateSavePanel(); }
+
+  function updateSavePanel() {
+    var panel = document.getElementById("groupPanel");
+    var list = document.getElementById("groupList");
+    list.innerHTML = "";
+
+    var sel = selectedPolylines();
+    var head = document.querySelector("#groupPanel .gp-head");
+
+    // spočítat vrstvy ve výběru
+    var byLayer = {};
+    sel.forEach(function (pl) { byLayer[pl.layer] = (byLayer[pl.layer] || 0) + 1; });
+    var layerCount = Object.keys(byLayer).length;
+
+    if (head) {
+      head.textContent = sel.length
+        ? ("Vybráno " + sel.length + " křivek ve " + layerCount + " vrstvách — ulož:")
+        : "Vyber křivky tažením rámečku v náhledu (protne = vybere). Pak je ulož jako DXF.";
+    }
+    // hlavní tlačítko dole ať dá najevo, že bere výběr
+    var dlBtn = document.getElementById("downloadBtn");
+    if (dlBtn) dlBtn.textContent = sel.length ? ("Stáhnout výběr (" + sel.length + ")") : "Stáhnout DXF";
+    panel.className = "show";
+    if (!sel.length) return;
+
+    // 1 DXF s vrstvami
+    var b1 = document.createElement("button");
+    b1.className = "gbtn all";
+    b1.textContent = "⬇ Vybrané do 1 DXF (s vrstvami)";
+    b1.addEventListener("click", function () {
+      downloadDxf(buildDxfWithLayers(sel), state.fileName + "_vyber.dxf");
+    });
+    list.appendChild(b1);
+
+    // ZIP po vrstvách
+    if (layerCount > 1) {
+      var b2 = document.createElement("button");
+      b2.className = "gbtn all";
+      b2.textContent = "⬇ Každá vrstva zvlášť (ZIP)";
+      b2.addEventListener("click", function () {
+        var files = [];
+        Object.keys(byLayer).forEach(function (li) {
+          var ly = state.layers[li];
+          var subset = sel.filter(function (pl) { return pl.layer == li; })
+            .map(function (pl) { var c = Object.create(pl); c.layer = 0; return c; });
+          files.push({ name: state.fileName + "_" + ly.name.toLowerCase() + ".dxf", text: buildDxf(subset, [ly]) });
+        });
+        downloadBlob(makeZip(files), state.fileName + "_vyber_vrstvy.zip");
+      });
+      list.appendChild(b2);
+    }
+
+    // vyčistit
+    var bc = document.createElement("button");
+    bc.className = "gbtn";
+    bc.textContent = "✕ Zrušit výběr";
+    bc.addEventListener("click", clearSelection);
+    list.appendChild(bc);
+  }
+
+
+  function pushPolyline(list, pts, meta) {
+    if (pts.length < 2) return;
+    var first = pts[0], last = pts[pts.length - 1];
+    var closed = Math.hypot(first[0] - last[0], first[1] - last[1]) < 0.02;
+    if (closed) pts.pop();
+    if (pts.length < 2) return;
+    list.push({
+      pts: pts, closed: closed,
+      layer: meta.layer || 0, grp: meta.grp || 0,
+      aci: meta.aci, hex: meta.hex, group: meta.group || null
+    });
+  }
+
+  // ---------- náhled (zoom + posun) ----------
+  var view = { k: 1, ox: 0, oy: 0 }; // sx = ox + x*k ; sy = oy - y*k (osa Y nahoru)
+
+  function fitPreview() {
+    var cssW = canvas.clientWidth, cssH = 380;
+    var pad = 24;
+    var k = Math.min((cssW - 2 * pad) / state.docWmm, (cssH - 2 * pad) / state.docHmm);
+    view.k = k;
+    view.ox = (cssW - state.docWmm * k) / 2;
+    view.oy = (cssH + state.docHmm * k) / 2;
+    drawPreview();
+  }
+
+  function drawPreview() {
+    var dpr = window.devicePixelRatio || 1;
+    var cssW = canvas.clientWidth, cssH = 380;
+    canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+    var ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    function sx(x) { return view.ox + x * view.k; }
+    function sy(y) { return view.oy - y * view.k; }
+
+    // obrys dokumentu
+    ctx.strokeStyle = "rgba(127,166,201,0.35)";
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(sx(0), sy(state.docHmm), state.docWmm * view.k, state.docHmm * view.k);
+    ctx.setLineDash([]);
+
+    ctx.lineWidth = 1.2;
+    ctx.lineJoin = "round";
+    var byLayer = state.layers.length > 1;
+    var anySel = selectionActive();
+
+    // výplně (poloprůhledně), skupiny se počítají even-odd kvůli dírám
+    if (fillsChk.checked) {
+      var fgroups = {};
+      state.polylines.forEach(function (pl) {
+        if (!pl.hex || !pl.closed) return;
+        (fgroups[pl.grp] = fgroups[pl.grp] || []).push(pl);
+      });
+      ctx.globalAlpha = 0.3;
+      Object.keys(fgroups).forEach(function (k) {
+        var pls = fgroups[k];
+        ctx.fillStyle = pls[0].hex;
+        ctx.beginPath();
+        pls.forEach(function (pl) {
+          pl.pts.forEach(function (p, i) {
+            if (i === 0) ctx.moveTo(sx(p[0]), sy(p[1])); else ctx.lineTo(sx(p[0]), sy(p[1]));
+          });
+          ctx.closePath();
+        });
+        ctx.fill("evenodd");
+      });
+      ctx.globalAlpha = 1;
+    }
+
+    state.polylines.forEach(function (pl, i) {
+      var ly = state.layers[pl.layer];
+      if (ly && ly.visible === false) return;   // vypnutá vrstva se nekreslí
+      var isSel = selPoly[i];
+      var dim = anySel && !isSel;
+      ctx.globalAlpha = dim ? 0.2 : 1;
+      ctx.lineWidth = isSel ? 2.4 : 1.2;
+      ctx.strokeStyle = isSel ? "#5EE68A" : (byLayer ? ly.hex : "#FF5A38");
+      ctx.beginPath();
+      pl.pts.forEach(function (p, j) {
+        if (j === 0) ctx.moveTo(sx(p[0]), sy(p[1])); else ctx.lineTo(sx(p[0]), sy(p[1]));
+      });
+      if (pl.closed) ctx.closePath();
+      ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+
+    // rámeček výběru
+    if (selRect) {
+      ctx.fillStyle = "rgba(94,230,138,0.12)";
+      ctx.strokeStyle = "#5EE68A";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      var rx = Math.min(selRect.x0, selRect.x1), ry = Math.min(selRect.y0, selRect.y1);
+      var rw = Math.abs(selRect.x1 - selRect.x0), rh = Math.abs(selRect.y1 - selRect.y0);
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeRect(rx, ry, rw, rh);
+      ctx.setLineDash([]);
+    }
+  }
+
+  function zoomAt(mx, my, factor) {
+    var wx = (mx - view.ox) / view.k;
+    var wy = (view.oy - my) / view.k;
+    view.k *= factor;
+    view.ox = mx - wx * view.k;
+    view.oy = my + wy * view.k;
+    drawPreview();
+  }
+
+  canvas.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    var rect = canvas.getBoundingClientRect();
+    zoomAt(e.clientX - rect.left, e.clientY - rect.top, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+  }, { passive: false });
+
+  var pan = null;
+  var selRect = null;      // {x0,y0,x1,y1} v CSS px
+  var selAdditive = false; // Shift = přidat k výběru
+
+  canvas.addEventListener("contextmenu", function (e) { e.preventDefault(); }); // pravé pro posun
+
+  canvas.addEventListener("pointerdown", function (e) {
+    if (e.isPrimary === false) return;
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    // pravé tlačítko (2) nebo prostřední (1) = posun; levé = výběr
+    if (e.button === 2 || e.button === 1) {
+      pan = { x: e.clientX, y: e.clientY };
+      canvas.classList.add("panning");
+    } else {
+      selAdditive = e.shiftKey;
+      selRect = { x0: mx, y0: my, x1: mx, y1: my };
+    }
+    canvas.setPointerCapture(e.pointerId);
+  });
+
+  canvas.addEventListener("pointermove", function (e) {
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    if (pan) {
+      view.ox += e.clientX - pan.x;
+      view.oy += e.clientY - pan.y;
+      pan = { x: e.clientX, y: e.clientY };
+      drawPreview();
+    } else if (selRect) {
+      selRect.x1 = mx; selRect.y1 = my;
+      drawPreview();
+    }
+  });
+
+  ["pointerup", "pointercancel", "pointerleave"].forEach(function (ev) {
+    canvas.addEventListener(ev, function (e) {
+      if (pan) { pan = null; canvas.classList.remove("panning"); return; }
+      if (selRect && ev === "pointerup") {
+        applySelectionRect(selRect, selAdditive);
+      }
+      if (ev === "pointerup" || ev === "pointercancel") { selRect = null; drawPreview(); }
+    });
+  });
+
+  canvas.addEventListener("dblclick", function () { fitPreview(); });
+
+  // aplikuje rámeček: vybere křivky, které protne; celé skupiny se doplní
+  function applySelectionRect(r, additive) {
+    var rx0 = Math.min(r.x0, r.x1), rx1 = Math.max(r.x0, r.x1);
+    var ry0 = Math.min(r.y0, r.y1), ry1 = Math.max(r.y0, r.y1);
+    // klik bez tažení (malý rámeček) = vyber jednu křivku pod kurzorem
+    var isClick = (rx1 - rx0 < 4 && ry1 - ry0 < 4);
+    if (isClick) { rx0 -= 3; ry0 -= 3; rx1 += 3; ry1 += 3; }
+
+    if (!additive) selPoly = {};
+
+    function sx(x) { return view.ox + x * view.k; }
+    function sy(y) { return view.oy - y * view.k; }
+
+    // spočítat velikost každé skupiny (kolik křivek)
+    if (!state._groupSizes) {
+      state._groupSizes = {};
+      state.polylines.forEach(function (pl) {
+        if (pl.group) state._groupSizes[pl.group] = (state._groupSizes[pl.group] || 0) + 1;
+      });
+    }
+    // kolik křivek je celkem v zapnutých vrstvách (pro rozpoznání "skupina = celá vrstva")
+    var totalVisible = 0;
+    state.polylines.forEach(function (pl) {
+      var ly = state.layers[pl.layer];
+      if (!(ly && ly.visible === false)) totalVisible++;
+    });
+
+    var hitGroups = {};
+    state.polylines.forEach(function (pl, i) {
+      var ly = state.layers[pl.layer];
+      if (ly && ly.visible === false) return;
+      if (polyIntersectsRect(pl, sx, sy, rx0, ry0, rx1, ry1)) {
+        selPoly[i] = true;
+        if (pl.group) hitGroups[pl.group] = true;
+      }
+    });
+    // doplnit celou skupinu, JEN pokud je to opravdová skupina:
+    // menší než ~60 % všech křivek (jinak je to fakticky celá vrstva/kresba)
+    Object.keys(hitGroups).forEach(function (gk) {
+      var sz = state._groupSizes[gk] || 0;
+      if (sz >= 2 && sz < totalVisible * 0.6) {
+        state.polylines.forEach(function (pl, i) {
+          if (pl.group === gk) selPoly[i] = true;
+        });
+      }
+    });
+    updateSavePanel();
+    drawPreview();
+  }
+
+  // protíná polyline obdélník? (test bodů + úseček)
+  function polyIntersectsRect(pl, sx, sy, rx0, ry0, rx1, ry1) {
+    var pts = pl.pts;
+    for (var i = 0; i < pts.length; i++) {
+      var X = sx(pts[i][0]), Y = sy(pts[i][1]);
+      if (X >= rx0 && X <= rx1 && Y >= ry0 && Y <= ry1) return true; // bod uvnitř
+      if (i > 0) {
+        var Xp = sx(pts[i - 1][0]), Yp = sy(pts[i - 1][1]);
+        if (segIntersectsRect(Xp, Yp, X, Y, rx0, ry0, rx1, ry1)) return true;
+      }
+    }
+    if (pl.closed && pts.length > 1) {
+      var a = pts[pts.length - 1], b = pts[0];
+      if (segIntersectsRect(sx(a[0]), sy(a[1]), sx(b[0]), sy(b[1]), rx0, ry0, rx1, ry1)) return true;
+    }
+    return false;
+  }
+
+  function segIntersectsRect(x0, y0, x1, y1, rx0, ry0, rx1, ry1) {
+    // rychlý test: úsečka vs 4 strany obdélníku
+    if ((x0 < rx0 && x1 < rx0) || (x0 > rx1 && x1 > rx1) ||
+        (y0 < ry0 && y1 < ry0) || (y0 > ry1 && y1 > ry1)) return false;
+    function seg(ax, ay, bx, by, cx, cy, dx, dy) {
+      function ccw(px, py, qx, qy, rx, ry) { return (ry - py) * (qx - px) > (qy - py) * (rx - px); }
+      return ccw(ax, ay, cx, cy, dx, dy) !== ccw(bx, by, cx, cy, dx, dy) &&
+             ccw(ax, ay, bx, by, cx, cy) !== ccw(ax, ay, bx, by, dx, dy);
+    }
+    return seg(x0, y0, x1, y1, rx0, ry0, rx1, ry0) ||
+           seg(x0, y0, x1, y1, rx1, ry0, rx1, ry1) ||
+           seg(x0, y0, x1, y1, rx1, ry1, rx0, ry1) ||
+           seg(x0, y0, x1, y1, rx0, ry1, rx0, ry0);
+  }
+
+  // pinch zoom na dotykových zařízeních
+  var pinch = null;
+  canvas.addEventListener("touchstart", function (e) {
+    if (e.touches.length === 2) { pan = null; pinch = dist2(e.touches); }
+  }, { passive: true });
+  canvas.addEventListener("touchmove", function (e) {
+    if (e.touches.length === 2 && pinch) {
+      e.preventDefault();
+      var d = dist2(e.touches);
+      var rect = canvas.getBoundingClientRect();
+      zoomAt((e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left,
+             (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top, d / pinch);
+      pinch = d;
+    }
+  }, { passive: false });
+  canvas.addEventListener("touchend", function () { pinch = null; });
+  function dist2(t) { return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY); }
+
+  window.addEventListener("resize", function () {
+    if (workspace.style.display === "block") fitPreview();
+  });
+
+  // ---------- šablona R2000 (vygenerováno ezdxf, ověřená struktura) ----------
+  var DXF2000_PROLOG_A = "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1015\n  9\n$ACADMAINTVER\n 70\n6\n  9\n$DWGCODEPAGE\n  3\nANSI_1252\n  9\n$INSBASE\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$EXTMIN\n 10\n1e+20\n 20\n1e+20\n 30\n1e+20\n  9\n$EXTMAX\n 10\n-1e+20\n 20\n-1e+20\n 30\n-1e+20\n  9\n$LIMMIN\n 10\n0.0\n 20\n0.0\n  9\n$LIMMAX\n 10\n420.0\n 20\n297.0\n  9\n$ORTHOMODE\n 70\n0\n  9\n$REGENMODE\n 70\n1\n  9\n$FILLMODE\n 70\n1\n  9\n$QTEXTMODE\n 70\n0\n  9\n$MIRRTEXT\n 70\n1\n  9\n$LTSCALE\n 40\n1.0\n  9\n$ATTMODE\n 70\n1\n  9\n$TEXTSIZE\n 40\n2.5\n  9\n$TRACEWID\n 40\n1.0\n  9\n$TEXTSTYLE\n  7\nStandard\n  9\n$CLAYER\n  8\n0\n  9\n$CELTYPE\n  6\nByLayer\n  9\n$CECOLOR\n 62\n256\n  9\n$CELTSCALE\n 40\n1.0\n  9\n$DISPSILH\n 70\n0\n  9\n$DIMSCALE\n 40\n1.0\n  9\n$DIMASZ\n 40\n2.5\n  9\n$DIMEXO\n 40\n0.625\n  9\n$DIMDLI\n 40\n3.75\n  9\n$DIMRND\n 40\n0.0\n  9\n$DIMDLE\n 40\n0.0\n  9\n$DIMEXE\n 40\n1.25\n  9\n$DIMTP\n 40\n0.0\n  9\n$DIMTM\n 40\n0.0\n  9\n$DIMTXT\n 40\n2.5\n  9\n$DIMCEN\n 40\n2.5\n  9\n$DIMTSZ\n 40\n0.0\n  9\n$DIMTOL\n 70\n0\n  9\n$DIMLIM\n 70\n0\n  9\n$DIMTIH\n 70\n0\n  9\n$DIMTOH\n 70\n0\n  9\n$DIMSE1\n 70\n0\n  9\n$DIMSE2\n 70\n0\n  9\n$DIMTAD\n 70\n1\n  9\n$DIMZIN\n 70\n8\n  9\n$DIMBLK\n  1\n\n  9\n$DIMASO\n 70\n1\n  9\n$DIMSHO\n 70\n1\n  9\n$DIMPOST\n  1\n\n  9\n$DIMAPOST\n  1\n\n  9\n$DIMALT\n 70\n0\n  9\n$DIMALTD\n 70\n3\n  9\n$DIMALTF\n 40\n0.03937007874\n  9\n$DIMLFAC\n 40\n1.0\n  9\n$DIMTOFL\n 70\n1\n  9\n$DIMTVP\n 40\n0.0\n  9\n$DIMTIX\n 70\n0\n  9\n$DIMSOXD\n 70\n0\n  9\n$DIMSAH\n 70\n0\n  9\n$DIMBLK1\n  1\n\n  9\n$DIMBLK2\n  1\n\n  9\n$DIMSTYLE\n  2\nISO-25\n  9\n$DIMCLRD\n 70\n0\n  9\n$DIMCLRE\n 70\n0\n  9\n$DIMCLRT\n 70\n0\n  9\n$DIMTFAC\n 40\n1.0\n  9\n$DIMGAP\n 40\n0.625\n  9\n$DIMJUST\n 70\n0\n  9\n$DIMSD1\n 70\n0\n  9\n$DIMSD2\n 70\n0\n  9\n$DIMTOLJ\n 70\n0\n  9\n$DIMTZIN\n 70\n8\n  9\n$DIMALTZ\n 70\n0\n  9\n$DIMALTTZ\n 70\n0\n  9\n$DIMUPT\n 70\n0\n  9\n$DIMDEC\n 70\n2\n  9\n$DIMTDEC\n 70\n2\n  9\n$DIMALTU\n 70\n2\n  9\n$DIMALTTD\n 70\n3\n  9\n$DIMTXSTY\n  7\nStandard\n  9\n$DIMAUNIT\n 70\n0\n  9\n$DIMADEC\n 70\n0\n  9\n$DIMALTRND\n 40\n0.0\n  9\n$DIMAZIN\n 70\n0\n  9\n$DIMDSEP\n 70\n44\n  9\n$DIMATFIT\n 70\n3\n  9\n$DIMFRAC\n 70\n0\n  9\n$DIMLDRBLK\n  1\n\n  9\n$DIMLUNIT\n 70\n2\n  9\n$DIMLWD\n 70\n-2\n  9\n$DIMLWE\n 70\n-2\n  9\n$DIMTMOVE\n 70\n0\n  9\n$LUNITS\n 70\n2\n  9\n$LUPREC\n 70\n4\n  9\n$SKETCHINC\n 40\n1.0\n  9\n$FILLETRAD\n 40\n10.0\n  9\n$AUNITS\n 70\n0\n  9\n$AUPREC\n 70\n2\n  9\n$MENU\n  1\n.\n  9\n$ELEVATION\n 40\n0.0\n  9\n$PELEVATION\n 40\n0.0\n  9\n$THICKNESS\n 40\n0.0\n  9\n$LIMCHECK\n 70\n0\n  9\n$CHAMFERA\n 40\n0.0\n  9\n$CHAMFERB\n 40\n0.0\n  9\n$CHAMFERC\n 40\n0.0\n  9\n$CHAMFERD\n 40\n0.0\n  9\n$SKPOLY\n 70\n0\n  9\n$TDCREATE\n 40\n2461235.502685185\n  9\n$TDUCREATE\n 40\n2458532.153996898\n  9\n$TDUPDATE\n 40\n2461235.502685185\n  9\n$TDUUPDATE\n 40\n2458532.1544311\n  9\n$TDINDWG\n 40\n0.0\n  9\n$TDUSRTIMER\n 40\n0.0\n  9\n$USRTIMER\n 70\n1\n  9\n$ANGBASE\n 50\n0.0\n  9\n$ANGDIR\n 70\n0\n  9\n$PDMODE\n 70\n0\n  9\n$PDSIZE\n 40\n0.0\n  9\n$PLINEWID\n 40\n0.0\n  9\n$SPLFRAME\n 70\n0\n  9\n$SPLINETYPE\n 70\n6\n  9\n$SPLINESEGS\n 70\n8\n  9\n$HANDSEED\n  5\nFFFFFF\n  9\n$SURFTAB1\n 70\n6\n  9\n$SURFTAB2\n 70\n6\n  9\n$SURFTYPE\n 70\n6\n  9\n$SURFU\n 70\n6\n  9\n$SURFV\n 70\n6\n  9\n$UCSBASE\n  2\n\n  9\n$UCSNAME\n  2\n\n  9\n$UCSORG\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$UCSXDIR\n 10\n1.0\n 20\n0.0\n 30\n0.0\n  9\n$UCSYDIR\n 10\n0.0\n 20\n1.0\n 30\n0.0\n  9\n$UCSORTHOREF\n  2\n\n  9\n$UCSORTHOVIEW\n 70\n0\n  9\n$UCSORGTOP\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$UCSORGBOTTOM\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$UCSORGLEFT\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$UCSORGRIGHT\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$UCSORGFRONT\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$UCSORGBACK\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$PUCSBASE\n  2\n\n  9\n$PUCSNAME\n  2\n\n  9\n$PUCSORG\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$PUCSXDIR\n 10\n1.0\n 20\n0.0\n 30\n0.0\n  9\n$PUCSYDIR\n 10\n0.0\n 20\n1.0\n 30\n0.0\n  9\n$PUCSORTHOREF\n  2\n\n  9\n$PUCSORTHOVIEW\n 70\n0\n  9\n$PUCSORGTOP\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$PUCSORGBOTTOM\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$PUCSORGLEFT\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$PUCSORGRIGHT\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$PUCSORGFRONT\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$PUCSORGBACK\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$USERI1\n 70\n0\n  9\n$USERI2\n 70\n0\n  9\n$USERI3\n 70\n0\n  9\n$USERI4\n 70\n0\n  9\n$USERI5\n 70\n0\n  9\n$USERR1\n 40\n0.0\n  9\n$USERR2\n 40\n0.0\n  9\n$USERR3\n 40\n0.0\n  9\n$USERR4\n 40\n0.0\n  9\n$USERR5\n 40\n0.0\n  9\n$WORLDVIEW\n 70\n1\n  9\n$SHADEDGE\n 70\n3\n  9\n$SHADEDIF\n 70\n70\n  9\n$TILEMODE\n 70\n1\n  9\n$MAXACTVP\n 70\n64\n  9\n$PINSBASE\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  9\n$PLIMCHECK\n 70\n0\n  9\n$PEXTMIN\n 10\n1e+20\n 20\n1e+20\n 30\n1e+20\n  9\n$PEXTMAX\n 10\n-1e+20\n 20\n-1e+20\n 30\n-1e+20\n  9\n$PLIMMIN\n 10\n0.0\n 20\n0.0\n  9\n$PLIMMAX\n 10\n420.0\n 20\n297.0\n  9\n$UNITMODE\n 70\n0\n  9\n$VISRETAIN\n 70\n1\n  9\n$PLINEGEN\n 70\n0\n  9\n$PSLTSCALE\n 70\n1\n  9\n$TREEDEPTH\n 70\n3020\n  9\n$CMLSTYLE\n  2\nStandard\n  9\n$CMLJUST\n 70\n0\n  9\n$CMLSCALE\n 40\n20.0\n  9\n$PROXYGRAPHICS\n 70\n1\n  9\n$MEASUREMENT\n 70\n1\n  9\n$CELWEIGHT\n370\n-1\n  9\n$ENDCAPS\n280\n0\n  9\n$JOINSTYLE\n280\n0\n  9\n$LWDISPLAY\n290\n0\n  9\n$INSUNITS\n 70\n6\n  9\n$HYPERLINKBASE\n  1\n\n  9\n$STYLESHEET\n  1\n\n  9\n$XEDIT\n290\n1\n  9\n$CEPSNTYPE\n380\n0\n  9\n$PSTYLEMODE\n290\n1\n  9\n$FINGERPRINTGUID\n  2\n{8A02EBC7-5ECB-48C6-9300-DF80769FED4D}\n  9\n$VERSIONGUID\n  2\n{DCCE7F94-A6F8-4D42-BBDF-DC4D19C316D6}\n  9\n$EXTNAMES\n290\n1\n  9\n$PSVPSCALE\n 40\n0.0\n  9\n$OLESTARTUP\n290\n0\n  0\nENDSEC\n  0\nSECTION\n  2\nCLASSES\n  0\nCLASS\n  1\nACDBDICTIONARYWDFLT\n  2\nAcDbDictionaryWithDefault\n  3\nObjectDBX Classes\n 90\n0\n280\n0\n281\n0\n  0\nCLASS\n  1\nSUN\n  2\nAcDbSun\n  3\nSCENEOE\n 90\n1153\n280\n0\n281\n0\n  0\nCLASS\n  1\nVISUALSTYLE\n  2\nAcDbVisualStyle\n  3\nObjectDBX Classes\n 90\n4095\n280\n0\n281\n0\n  0\nCLASS\n  1\nMATERIAL\n  2\nAcDbMaterial\n  3\nObjectDBX Classes\n 90\n1153\n280\n0\n281\n0\n  0\nCLASS\n  1\nSCALE\n  2\nAcDbScale\n  3\nObjectDBX Classes\n 90\n1153\n280\n0\n281\n0\n  0\nCLASS\n  1\nTABLESTYLE\n  2\nAcDbTableStyle\n  3\nObjectDBX Classes\n 90\n4095\n280\n0\n281\n0\n  0\nCLASS\n  1\nMLEADERSTYLE\n  2\nAcDbMLeaderStyle\n  3\nACDB_MLEADERSTYLE_CLASS\n 90\n4095\n280\n0\n281\n0\n  0\nCLASS\n  1\nDICTIONARYVAR\n  2\nAcDbDictionaryVar\n  3\nObjectDBX Classes\n 90\n0\n280\n0\n281\n0\n  0\nCLASS\n  1\nCELLSTYLEMAP\n  2\nAcDbCellStyleMap\n  3\nObjectDBX Classes\n 90\n1152\n280\n0\n281\n0\n  0\nCLASS\n  1\nMENTALRAYRENDERSETTINGS\n  2\nAcDbMentalRayRenderSettings\n  3\nSCENEOE\n 90\n1024\n280\n0\n281\n0\n  0\nCLASS\n  1\nACDBDETAILVIEWSTYLE\n  2\nAcDbDetailViewStyle\n  3\nObjectDBX Classes\n 90\n1025\n280\n0\n281\n0\n  0\nCLASS\n  1\nACDBSECTIONVIEWSTYLE\n  2\nAcDbSectionViewStyle\n  3\nObjectDBX Classes\n 90\n1025\n280\n0\n281\n0\n  0\nCLASS\n  1\nRASTERVARIABLES\n  2\nAcDbRasterVariables\n  3\nISM\n 90\n0\n280\n0\n281\n0\n  0\nCLASS\n  1\nACDBPLACEHOLDER\n  2\nAcDbPlaceHolder\n  3\nObjectDBX Classes\n 90\n0\n280\n0\n281\n0\n  0\nCLASS\n  1\nLAYOUT\n  2\nAcDbLayout\n  3\nObjectDBX Classes\n 90\n0\n280\n0\n281\n0\n  0\nENDSEC\n  0\nSECTION\n  2\nTABLES\n  0\nTABLE\n  2\nVPORT\n  5\n8\n330\n0\n100\nAcDbSymbolTable\n 70\n1\n  0\nVPORT\n  5\n23\n330\n8\n100\nAcDbSymbolTableRecord\n100\nAcDbViewportTableRecord\n  2\n*Active\n 70\n0\n 10\n0.0\n 20\n0.0\n 11\n1.0\n 21\n1.0\n 12\n0.0\n 22\n0.0\n 13\n0.0\n 23\n0.0\n 14\n0.5\n 24\n0.5\n 15\n0.5\n 25\n0.5\n 16\n0.0\n 26\n0.0\n 36\n1.0\n 17\n0.0\n 27\n0.0\n 37\n0.0\n 40\n1000.0\n 41\n1.34\n 42\n50.0\n 43\n0.0\n 44\n0.0\n 50\n0.0\n 51\n0.0\n 71\n0\n 72\n1000\n 73\n1\n 74\n3\n 75\n0\n 76\n0\n 77\n0\n 78\n0\n281\n0\n 65\n0\n146\n0.0\n  0\nENDTAB\n  0\nTABLE\n  2\nLTYPE\n  5\n2\n330\n0\n100\nAcDbSymbolTable\n 70\n3\n  0\nLTYPE\n  5\n24\n330\n2\n100\nAcDbSymbolTableRecord\n100\nAcDbLinetypeTableRecord\n  2\nByBlock\n 70\n0\n  3\n\n 72\n65\n 73\n0\n 40\n0.0\n  0\nLTYPE\n  5\n25\n330\n2\n100\nAcDbSymbolTableRecord\n100\nAcDbLinetypeTableRecord\n  2\nByLayer\n 70\n0\n  3\n\n 72\n65\n 73\n0\n 40\n0.0\n  0\nLTYPE\n  5\n26\n330\n2\n100\nAcDbSymbolTableRecord\n100\nAcDbLinetypeTableRecord\n  2\nContinuous\n 70\n0\n  3\n\n 72\n65\n 73\n0\n 40\n0.0\n  0\nENDTAB\n  0\nTABLE\n  2\nLAYER\n  5\n1\n330\n0\n100\nAcDbSymbolTable\n 70\n3\n  0\nLAYER\n  5\n27\n330\n1\n100\nAcDbSymbolTableRecord\n100\nAcDbLayerTableRecord\n  2\n0\n 70\n0\n 62\n7\n  6\nContinuous\n370\n-3\n390\n13\n  0\nLAYER\n  5\n28\n330\n1\n100\nAcDbSymbolTableRecord\n100\nAcDbLayerTableRecord\n  2\nDefpoints\n 70\n0\n 62\n7\n  6\nContinuous\n290\n0\n370\n-3\n390\n13\n";
+  var DXF2000_LAYER_TPL = "  0\nLAYER\n  5\n{H}\n330\n1\n100\nAcDbSymbolTableRecord\n100\nAcDbLayerTableRecord\n  2\n{NAME}\n 70\n0\n 62\n{ACI}\n  6\nContinuous\n370\n-3\n390\n13\n";
+  var DXF2000_PROLOG_B = "  0\nENDTAB\n  0\nTABLE\n  2\nSTYLE\n  5\n5\n330\n0\n100\nAcDbSymbolTable\n 70\n1\n  0\nSTYLE\n  5\n29\n330\n5\n100\nAcDbSymbolTableRecord\n100\nAcDbTextStyleTableRecord\n  2\nStandard\n 70\n0\n 40\n0.0\n 41\n1.0\n 50\n0.0\n 71\n0\n 42\n2.5\n  3\ntxt\n  4\n\n  0\nENDTAB\n  0\nTABLE\n  2\nVIEW\n  5\n7\n330\n0\n100\nAcDbSymbolTable\n 70\n0\n  0\nENDTAB\n  0\nTABLE\n  2\nUCS\n  5\n6\n330\n0\n100\nAcDbSymbolTable\n 70\n0\n  0\nENDTAB\n  0\nTABLE\n  2\nAPPID\n  5\n3\n330\n0\n100\nAcDbSymbolTable\n 70\n3\n  0\nAPPID\n  5\n2A\n330\n3\n100\nAcDbSymbolTableRecord\n100\nAcDbRegAppTableRecord\n  2\nACAD\n 70\n0\n  0\nAPPID\n  5\n32\n330\n3\n100\nAcDbSymbolTableRecord\n100\nAcDbRegAppTableRecord\n  2\nHATCHBACKGROUNDCOLOR\n 70\n0\n  0\nAPPID\n  5\n33\n330\n3\n100\nAcDbSymbolTableRecord\n100\nAcDbRegAppTableRecord\n  2\nEZDXF\n 70\n0\n  0\nENDTAB\n  0\nTABLE\n  2\nDIMSTYLE\n  5\n4\n330\n0\n100\nAcDbSymbolTable\n 70\n1\n100\nAcDbDimStyleTable\n  0\nDIMSTYLE\n105\n2B\n330\n4\n100\nAcDbSymbolTableRecord\n100\nAcDbDimStyleTableRecord\n  2\nStandard\n 70\n0\n  3\n\n  4\n\n 40\n1.0\n 41\n2.5\n 42\n0.625\n 43\n3.75\n 44\n1.25\n 45\n0.0\n 46\n0.0\n 47\n0.0\n 48\n0.0\n140\n2.5\n141\n2.5\n142\n0.0\n143\n0.03937007874\n144\n1.0\n145\n0.0\n146\n1.0\n147\n0.625\n148\n0.0\n 71\n0\n 72\n0\n 73\n0\n 74\n0\n 75\n0\n 76\n0\n 77\n1\n 78\n8\n 79\n3\n170\n0\n171\n3\n172\n1\n173\n0\n174\n0\n175\n0\n176\n0\n177\n0\n178\n0\n179\n2\n271\n2\n272\n2\n273\n2\n274\n3\n275\n0\n276\n0\n277\n2\n278\n44\n279\n0\n280\n0\n281\n0\n282\n0\n283\n0\n284\n8\n285\n0\n286\n0\n288\n0\n289\n3\n371\n-2\n372\n-2\n  0\nENDTAB\n  0\nTABLE\n  2\nBLOCK_RECORD\n  5\n9\n330\n0\n100\nAcDbSymbolTable\n 70\n2\n  0\nBLOCK_RECORD\n  5\n17\n330\n9\n100\nAcDbSymbolTableRecord\n100\nAcDbBlockTableRecord\n  2\n*Model_Space\n340\n1A\n  0\nBLOCK_RECORD\n  5\n1B\n330\n9\n100\nAcDbSymbolTableRecord\n100\nAcDbBlockTableRecord\n  2\n*Paper_Space\n340\n1E\n  0\nENDTAB\n  0\nENDSEC\n  0\nSECTION\n  2\nBLOCKS\n  0\nBLOCK\n  5\n18\n330\n17\n100\nAcDbEntity\n  8\n0\n100\nAcDbBlockBegin\n  2\n*Model_Space\n 70\n0\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  3\n*Model_Space\n  1\n\n  0\nENDBLK\n  5\n19\n330\n17\n100\nAcDbEntity\n  8\n0\n100\nAcDbBlockEnd\n  0\nBLOCK\n  5\n1C\n330\n1B\n100\nAcDbEntity\n  8\n0\n100\nAcDbBlockBegin\n  2\n*Paper_Space\n 70\n0\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  3\n*Paper_Space\n  1\n\n  0\nENDBLK\n  5\n1D\n330\n1B\n100\nAcDbEntity\n  8\n0\n100\nAcDbBlockEnd\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n";
+  var DXF2000_EPILOG = "  0\nENDSEC\n  0\nSECTION\n  2\nOBJECTS\n  0\nDICTIONARY\n  5\nA\n330\n0\n100\nAcDbDictionary\n281\n1\n  3\nACAD_COLOR\n350\nB\n  3\nACAD_GROUP\n350\nC\n  3\nACAD_LAYOUT\n350\nD\n  3\nACAD_MATERIAL\n350\nE\n  3\nACAD_MLEADERSTYLE\n350\nF\n  3\nACAD_MLINESTYLE\n350\n10\n  3\nACAD_PLOTSETTINGS\n350\n11\n  3\nACAD_PLOTSTYLENAME\n350\n12\n  3\nACAD_SCALELIST\n350\n14\n  3\nACAD_TABLESTYLE\n350\n15\n  3\nACAD_VISUALSTYLE\n350\n16\n  3\nEZDXF_META\n350\n2D\n  0\nDICTIONARY\n  5\nB\n330\nA\n100\nAcDbDictionary\n281\n1\n  0\nDICTIONARY\n  5\nC\n330\nA\n100\nAcDbDictionary\n281\n1\n  0\nDICTIONARY\n  5\nD\n330\nA\n100\nAcDbDictionary\n281\n1\n  3\nModel\n350\n1A\n  3\nLayout1\n350\n1E\n  0\nDICTIONARY\n  5\nE\n330\nA\n100\nAcDbDictionary\n281\n1\n  3\nByBlock\n350\n1F\n  3\nByLayer\n350\n20\n  3\nGlobal\n350\n21\n  0\nDICTIONARY\n  5\nF\n330\nA\n100\nAcDbDictionary\n281\n1\n  3\nStandard\n350\n2C\n  0\nDICTIONARY\n  5\n10\n330\nA\n100\nAcDbDictionary\n281\n1\n  3\nStandard\n350\n22\n  0\nDICTIONARY\n  5\n11\n330\nA\n100\nAcDbDictionary\n281\n1\n  0\nACDBDICTIONARYWDFLT\n  5\n12\n330\nA\n100\nAcDbDictionary\n281\n1\n  3\nNormal\n350\n13\n100\nAcDbDictionaryWithDefault\n340\n13\n  0\nACDBPLACEHOLDER\n  5\n13\n330\n12\n  0\nDICTIONARY\n  5\n14\n330\nA\n100\nAcDbDictionary\n281\n1\n  0\nDICTIONARY\n  5\n15\n330\nA\n100\nAcDbDictionary\n281\n1\n  0\nDICTIONARY\n  5\n16\n330\nA\n100\nAcDbDictionary\n281\n1\n  0\nLAYOUT\n  5\n1A\n330\nD\n100\nAcDbPlotSettings\n  1\n\n  4\nA3\n  6\n\n 40\n7.5\n 41\n20.0\n 42\n7.5\n 43\n20.0\n 44\n420.0\n 45\n297.0\n 46\n0.0\n 47\n0.0\n 48\n0.0\n 49\n0.0\n140\n0.0\n141\n0.0\n142\n1.0\n143\n1.0\n 70\n1024\n 72\n1\n 73\n0\n 74\n5\n  7\n\n 75\n16\n 76\n0\n 77\n2\n 78\n300\n147\n1.0\n148\n0.0\n149\n0.0\n100\nAcDbLayout\n  1\nModel\n 70\n1\n 71\n0\n 10\n0.0\n 20\n0.0\n 11\n420.0\n 21\n297.0\n 12\n0.0\n 22\n0.0\n 32\n0.0\n 14\n1e+20\n 24\n1e+20\n 34\n1e+20\n 15\n-1e+20\n 25\n-1e+20\n 35\n-1e+20\n146\n0.0\n 13\n0.0\n 23\n0.0\n 33\n0.0\n 16\n1.0\n 26\n0.0\n 36\n0.0\n 17\n0.0\n 27\n1.0\n 37\n0.0\n 76\n1\n330\n17\n  0\nLAYOUT\n  5\n1E\n330\nD\n100\nAcDbPlotSettings\n  1\n\n  4\nA3\n  6\n\n 40\n7.5\n 41\n20.0\n 42\n7.5\n 43\n20.0\n 44\n420.0\n 45\n297.0\n 46\n0.0\n 47\n0.0\n 48\n0.0\n 49\n0.0\n140\n0.0\n141\n0.0\n142\n1.0\n143\n1.0\n 70\n0\n 72\n1\n 73\n0\n 74\n5\n  7\n\n 75\n16\n 76\n0\n 77\n2\n 78\n300\n147\n1.0\n148\n0.0\n149\n0.0\n100\nAcDbLayout\n  1\nLayout1\n 70\n1\n 71\n1\n 10\n0.0\n 20\n0.0\n 11\n420.0\n 21\n297.0\n 12\n0.0\n 22\n0.0\n 32\n0.0\n 14\n1e+20\n 24\n1e+20\n 34\n1e+20\n 15\n-1e+20\n 25\n-1e+20\n 35\n-1e+20\n146\n0.0\n 13\n0.0\n 23\n0.0\n 33\n0.0\n 16\n1.0\n 26\n0.0\n 36\n0.0\n 17\n0.0\n 27\n1.0\n 37\n0.0\n 76\n1\n330\n1B\n  0\nMATERIAL\n  5\n1F\n102\n{ACAD_REACTORS\n330\nE\n102\n}\n330\nE\n100\nAcDbMaterial\n  1\nByBlock\n  2\n\n 70\n0\n 40\n1.0\n 71\n1\n 41\n1.0\n 91\n-1023410177\n 42\n1.0\n 72\n1\n  3\n\n 73\n1\n 74\n1\n 75\n1\n 44\n0.5\n 73\n0\n 45\n1.0\n 46\n1.0\n 77\n1\n  4\n\n 78\n1\n 79\n1\n170\n1\n 48\n1.0\n171\n1\n  6\n\n172\n1\n173\n1\n174\n1\n140\n1.0\n141\n1.0\n175\n1\n  7\n\n176\n1\n177\n1\n178\n1\n143\n1.0\n179\n1\n  8\n\n270\n1\n271\n1\n272\n1\n145\n1.0\n146\n1.0\n273\n1\n  9\n\n274\n1\n275\n1\n276\n1\n 42\n1.0\n 72\n1\n  3\n\n 73\n1\n 74\n1\n 75\n1\n 94\n63\n  0\nMATERIAL\n  5\n20\n102\n{ACAD_REACTORS\n330\nE\n102\n}\n330\nE\n100\nAcDbMaterial\n  1\nByLayer\n  2\n\n 70\n0\n 40\n1.0\n 71\n1\n 41\n1.0\n 91\n-1023410177\n 42\n1.0\n 72\n1\n  3\n\n 73\n1\n 74\n1\n 75\n1\n 44\n0.5\n 73\n0\n 45\n1.0\n 46\n1.0\n 77\n1\n  4\n\n 78\n1\n 79\n1\n170\n1\n 48\n1.0\n171\n1\n  6\n\n172\n1\n173\n1\n174\n1\n140\n1.0\n141\n1.0\n175\n1\n  7\n\n176\n1\n177\n1\n178\n1\n143\n1.0\n179\n1\n  8\n\n270\n1\n271\n1\n272\n1\n145\n1.0\n146\n1.0\n273\n1\n  9\n\n274\n1\n275\n1\n276\n1\n 42\n1.0\n 72\n1\n  3\n\n 73\n1\n 74\n1\n 75\n1\n 94\n63\n  0\nMATERIAL\n  5\n21\n102\n{ACAD_REACTORS\n330\nE\n102\n}\n330\nE\n100\nAcDbMaterial\n  1\nGlobal\n  2\n\n 70\n0\n 40\n1.0\n 71\n1\n 41\n1.0\n 91\n-1023410177\n 42\n1.0\n 72\n1\n  3\n\n 73\n1\n 74\n1\n 75\n1\n 44\n0.5\n 73\n0\n 45\n1.0\n 46\n1.0\n 77\n1\n  4\n\n 78\n1\n 79\n1\n170\n1\n 48\n1.0\n171\n1\n  6\n\n172\n1\n173\n1\n174\n1\n140\n1.0\n141\n1.0\n175\n1\n  7\n\n176\n1\n177\n1\n178\n1\n143\n1.0\n179\n1\n  8\n\n270\n1\n271\n1\n272\n1\n145\n1.0\n146\n1.0\n273\n1\n  9\n\n274\n1\n275\n1\n276\n1\n 42\n1.0\n 72\n1\n  3\n\n 73\n1\n 74\n1\n 75\n1\n 94\n63\n  0\nMLINESTYLE\n  5\n22\n102\n{ACAD_REACTORS\n330\n10\n102\n}\n330\n10\n100\nAcDbMlineStyle\n  2\nStandard\n 70\n0\n  3\n\n 62\n256\n 51\n90.0\n 52\n90.0\n 71\n2\n 49\n0.5\n 62\n256\n  6\nBYLAYER\n 49\n-0.5\n 62\n256\n  6\nBYLAYER\n  0\nMLEADERSTYLE\n  5\n2C\n102\n{ACAD_REACTORS\n330\nF\n102\n}\n330\nF\n100\nAcDbMLeaderStyle\n179\n2\n170\n2\n171\n1\n172\n0\n 90\n2\n 40\n0.0\n 41\n0.0\n173\n1\n 91\n-1056964608\n 92\n-2\n290\n1\n 42\n2.0\n291\n1\n 43\n8.0\n  3\nStandard\n 44\n4.0\n300\n\n342\n29\n174\n1\n175\n1\n176\n0\n178\n1\n 93\n-1056964608\n 45\n4.0\n292\n0\n297\n0\n 46\n4.0\n 94\n-1056964608\n 47\n1.0\n 49\n1.0\n140\n1.0\n294\n1\n141\n0.0\n177\n0\n142\n1.0\n295\n0\n296\n0\n143\n3.75\n271\n0\n272\n9\n273\n9\n  0\nDICTIONARY\n  5\n2D\n330\nA\n100\nAcDbDictionary\n280\n1\n281\n1\n  3\nCREATED_BY_EZDXF\n350\n2E\n  3\nWRITTEN_BY_EZDXF\n350\n34\n  0\nDICTIONARYVAR\n  5\n2E\n330\n2D\n100\nDictionaryVariables\n280\n0\n  1\n1.4.4 @ 2026-07-13T12:03:52.221842+00:00\n  0\nDICTIONARYVAR\n  5\n34\n330\n2D\n100\nDictionaryVariables\n280\n0\n  1\n1.4.4 @ 2026-07-13T12:03:52.226292+00:00\n  0\nENDSEC\n  0\nEOF\n";
+
+  // převod RGB -> přibližný ACI kód (paleta AutoCADu)
+  function rgbToAci(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    var mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    var v = mx, s = mx ? (mx - mn) / mx : 0;
+    if (s < 0.12) { // šedá škála
+      if (v > 0.95) return 7;
+      if (v < 0.06) return 250;
+      return 250 + Math.min(5, Math.round(v * 5));
+    }
+    var h;
+    if (mx === r) h = ((g - b) / (mx - mn)) % 6;
+    else if (mx === g) h = (b - r) / (mx - mn) + 2;
+    else h = (r - g) / (mx - mn) + 4;
+    h = (h * 60 + 360) % 360;
+    var band = Math.round(h / 15) % 24;
+    var offs = v > 0.85 ? 0 : v > 0.65 ? 2 : v > 0.45 ? 4 : v > 0.3 ? 6 : 8;
+    var pastel = s < 0.55 ? 1 : 0;
+    return 10 + band * 10 + offs + pastel;
+  }
+
+  // ---------- generování DXF R2000 s výplněmi (HATCH) ----------
+  function buildDxf2000(polys, layerTable) {
+    var seed = 0x10000;
+    function nh() { return (seed++).toString(16).toUpperCase(); }
+    function lname(idx) { return layerTable.length ? state.layers[idx].name : "0"; }
+
+    var layersTxt = "";
+    layerTable.forEach(function (ly) {
+      layersTxt += DXF2000_LAYER_TPL
+        .replace("{H}", nh()).replace("{NAME}", ly.name).replace("{ACI}", String(ly.aci));
+    });
+
+    var L = [];
+    function g(code, val) { L.push(String(code)); L.push(String(val)); }
+
+    polys.forEach(function (pl) {
+      g(0, "LWPOLYLINE"); g(5, nh()); g(330, "17"); g(100, "AcDbEntity");
+      g(8, lname(pl.layer));
+      g(100, "AcDbPolyline"); g(90, pl.pts.length); g(70, pl.closed ? 1 : 0);
+      pl.pts.forEach(function (p) { g(10, p[0].toFixed(4)); g(20, p[1].toFixed(4)); });
+    });
+
+    // výplně: uzavřené křivky téhož SVG objektu = jeden HATCH (díry přes even-odd)
+    var groups = {};
+    polys.forEach(function (pl) {
+      if (pl.aci == null || !pl.closed) return;
+      var gr = groups[pl.grp] || (groups[pl.grp] = { layer: pl.layer, aci: pl.aci, paths: [] });
+      gr.paths.push(pl.pts);
+    });
+    Object.keys(groups).forEach(function (k) {
+      var gr = groups[k];
+      g(0, "HATCH"); g(5, nh()); g(330, "17"); g(100, "AcDbEntity");
+      g(8, lname(gr.layer)); g(62, gr.aci);
+      g(100, "AcDbHatch");
+      g(10, "0.0"); g(20, "0.0"); g(30, "0.0");
+      g(210, "0.0"); g(220, "0.0"); g(230, "1.0");
+      g(2, "SOLID"); g(70, 1); g(71, 0); g(91, gr.paths.length);
+      gr.paths.forEach(function (pts) {
+        g(92, 3); g(72, 0); g(73, 1); g(93, pts.length);
+        pts.forEach(function (p) { g(10, p[0].toFixed(4)); g(20, p[1].toFixed(4)); });
+        g(97, 0);
+      });
+      g(75, 0); g(76, 1); g(98, 0);
+    });
+
+    return DXF2000_PROLOG_A + layersTxt + DXF2000_PROLOG_B + L.join("\n") + "\n" + DXF2000_EPILOG;
+  }
+
+  // ---------- generování DXF R12 ----------
+  function buildDxf(polys, layerTable) {
+    var L = [];
+    function g(code, val) { L.push(String(code)); L.push(String(val)); }
+    g(0, "SECTION"); g(2, "HEADER");
+    g(9, "$ACADVER"); g(1, "AC1009");
+    g(0, "ENDSEC");
+
+    // tabulka vrstev
+    g(0, "SECTION"); g(2, "TABLES");
+    g(0, "TABLE"); g(2, "LAYER"); g(70, layerTable.length);
+    layerTable.forEach(function (ly) {
+      g(0, "LAYER"); g(2, ly.name); g(70, 0); g(62, ly.aci); g(6, "CONTINUOUS");
+    });
+    g(0, "ENDTAB"); g(0, "ENDSEC");
+
+    g(0, "SECTION"); g(2, "ENTITIES");
+    polys.forEach(function (pl) {
+      var lname = layerTable.length ? layerTable[pl.layer].name : "0";
+      g(0, "POLYLINE"); g(8, lname); g(66, 1); g(70, pl.closed ? 1 : 0);
+      g(10, 0); g(20, 0); g(30, 0);
+      pl.pts.forEach(function (p) {
+        g(0, "VERTEX"); g(8, lname);
+        g(10, p[0].toFixed(4)); g(20, p[1].toFixed(4)); g(30, 0);
+      });
+      g(0, "SEQEND");
+    });
+    g(0, "ENDSEC"); g(0, "EOF");
+    return L.join("\r\n") + "\r\n";
+  }
+
+  // ---------- generování DXF R12 s bloky (skupiny z Corelu) ----------
+  function buildDxfBlocks(polys, layerTable) {
+    var L = [];
+    function g(code, val) { L.push(String(code)); L.push(String(val)); }
+    function lname(pl) { return layerTable.length ? layerTable[pl.layer].name : "0"; }
+    function emitPolyline(pl) {
+      var ln = lname(pl);
+      g(0, "POLYLINE"); g(8, ln); g(66, 1); g(70, pl.closed ? 1 : 0);
+      g(10, 0); g(20, 0); g(30, 0);
+      pl.pts.forEach(function (p) {
+        g(0, "VERTEX"); g(8, ln);
+        g(10, p[0].toFixed(4)); g(20, p[1].toFixed(4)); g(30, 0);
+      });
+      g(0, "SEQEND");
+    }
+
+    // roztřídit: seskupené podle group, negrupované zvlášť
+    var blocks = {};       // group -> [polys]
+    var blockOrder = [];
+    var loose = [];
+    polys.forEach(function (pl) {
+      if (pl.group) {
+        if (!blocks[pl.group]) { blocks[pl.group] = []; blockOrder.push(pl.group); }
+        blocks[pl.group].push(pl);
+      } else loose.push(pl);
+    });
+
+    // bezpečné jméno bloku pro DXF (bez mezer, velká písmena)
+    var nameMap = {}, used = {};
+    blockOrder.forEach(function (key, i) {
+      var nm = key.replace(/[^A-Za-z0-9_$-]/g, "_");
+      if (!nm || /^[0-9]/.test(nm)) nm = "BLK_" + nm;
+      var base = nm; var k = 1;
+      while (used[nm]) nm = base + "_" + (k++);
+      used[nm] = 1; nameMap[key] = nm;
+    });
+
+    g(0, "SECTION"); g(2, "HEADER");
+    g(9, "$ACADVER"); g(1, "AC1009");
+    g(0, "ENDSEC");
+
+    g(0, "SECTION"); g(2, "TABLES");
+    g(0, "TABLE"); g(2, "LAYER"); g(70, layerTable.length);
+    layerTable.forEach(function (ly) {
+      g(0, "LAYER"); g(2, ly.name); g(70, 0); g(62, ly.aci); g(6, "CONTINUOUS");
+    });
+    g(0, "ENDTAB"); g(0, "ENDSEC");
+
+    // definice bloků
+    g(0, "SECTION"); g(2, "BLOCKS");
+    blockOrder.forEach(function (key) {
+      var nm = nameMap[key];
+      g(0, "BLOCK"); g(8, "0"); g(2, nm); g(70, 0);
+      g(10, 0); g(20, 0); g(30, 0); g(3, nm);
+      blocks[key].forEach(emitPolyline);
+      g(0, "ENDBLK"); g(8, "0");
+    });
+    g(0, "ENDSEC");
+
+    // entity: INSERT pro každý blok + volné křivky napřímo
+    g(0, "SECTION"); g(2, "ENTITIES");
+    blockOrder.forEach(function (key) {
+      g(0, "INSERT"); g(8, "0"); g(2, nameMap[key]);
+      g(10, 0); g(20, 0); g(30, 0);
+    });
+    loose.forEach(emitPolyline);
+    g(0, "ENDSEC"); g(0, "EOF");
+    return L.join("\r\n") + "\r\n";
+  }
+
+  function downloadDxf(text, name) {
+    downloadBlob(new Blob([text], { type: "application/dxf" }), name);
+  }
+
+  function downloadBlob(blob, name) {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+  }
+
+  // ---------- minimální ZIP (metoda STORE, bez komprese) ----------
+  var CRC_TABLE = (function () {
+    var t = new Uint32Array(256);
+    for (var n = 0; n < 256; n++) {
+      var c = n;
+      for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(bytes) {
+    var c = 0xFFFFFFFF;
+    for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+  function makeZip(files) { // files: [{name, text}]
+    var enc = new TextEncoder();
+    var parts = [], central = [], offset = 0;
+    files.forEach(function (f) {
+      var name = enc.encode(f.name);
+      var data = enc.encode(f.text);
+      var crc = crc32(data);
+      var lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true);
+      lh.setUint16(4, 20, true);        // verze
+      lh.setUint16(8, 0, true);         // metoda STORE
+      lh.setUint32(14, crc, true);
+      lh.setUint32(18, data.length, true);
+      lh.setUint32(22, data.length, true);
+      lh.setUint16(26, name.length, true);
+      parts.push(lh.buffer, name, data);
+
+      var ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0, 0x02014b50, true);
+      ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+      ch.setUint16(10, 0, true);
+      ch.setUint32(16, crc, true);
+      ch.setUint32(20, data.length, true);
+      ch.setUint32(24, data.length, true);
+      ch.setUint16(28, name.length, true);
+      ch.setUint32(42, offset, true);
+      central.push(ch.buffer, name);
+      offset += 30 + name.length + data.length;
+    });
+    var cdSize = 0;
+    central.forEach(function (b) { cdSize += b.byteLength || b.length; });
+    var eocd = new DataView(new ArrayBuffer(22));
+    eocd.setUint32(0, 0x06054b50, true);
+    eocd.setUint16(8, files.length, true);
+    eocd.setUint16(10, files.length, true);
+    eocd.setUint32(12, cdSize, true);
+    eocd.setUint32(16, offset, true);
+    return new Blob(parts.concat(central, [eocd.buffer]), { type: "application/zip" });
+  }
+
+  // ---------- přepínač Základní / Rozšířené ----------
+  var modeBasic = document.getElementById("modeBasic");
+  var modeAdvanced = document.getElementById("modeAdvanced");
+  var modeDesc = document.getElementById("modeDesc");
+
+  function setMode(advanced) {
+    document.body.classList.toggle("basic", !advanced);
+    modeBasic.classList.toggle("active", !advanced);
+    modeAdvanced.classList.toggle("active", advanced);
+    modeDesc.textContent = advanced
+      ? "Vše: výplně (HATCH), bloky, export po křivkách."
+      : "Jen to podstatné pro laser: výběr, vrstvy, DXF.";
+    if (!advanced) {
+      var v = layerModeSel.value;
+      if (v === "blocks" || v === "curves") layerModeSel.value = "single";
+      var fc = document.getElementById("fillsChk");
+      if (fc && fc.checked) { fc.checked = false; if (workspace.style.display === "block") drawPreview(); }
+    }
+  }
+  modeBasic.addEventListener("click", function () { setMode(false); });
+  modeAdvanced.addEventListener("click", function () { setMode(true); });
+  setMode(false); // výchozí = základní
+
+  var fillsChk = document.getElementById("fillsChk");
+  fillsChk.addEventListener("change", function () {
+    if (workspace.style.display === "block") drawPreview();
+  });
+
+  document.getElementById("downloadBtn").addEventListener("click", function () {
+    var mode = layerModeSel.value;
+    var build = fillsChk.checked ? buildDxf2000 : buildDxf;
+
+    // když je něco vybráno v náhledu, pracuj jen s výběrem; jinak se vším
+    var sel = selectedPolylines();
+    var source = sel.length ? sel : state.polylines;
+
+    if (mode === "blocks") {
+      var nGroups = 0, seen = {};
+      source.forEach(function (pl) {
+        if (pl.group && !seen[pl.group]) { seen[pl.group] = 1; nGroups++; }
+      });
+      if (!nGroups) {
+        showMsg("Žádné skupiny k exportu (v Corelu objekty seskupte, Ctrl+G). Stahuji bez bloků.", "warn");
+        downloadDxf(buildDxf(source, []), state.fileName + ".dxf");
+        return;
+      }
+      downloadDxf(buildDxfBlocks(source, []), state.fileName + ".dxf");
+      return;
+    }
+
+    if (mode === "curves") {
+      // každá křivka do vlastního DXF, vše v jednom ZIPu
+      var pad = String(source.length).length;
+      var files = source.map(function (pl, i) {
+        var num = String(i + 1).padStart(Math.max(pad, 2), "0");
+        var lname = state.layers.length > 1
+          ? "_" + state.layers[pl.layer].name.toLowerCase() : "";
+        return {
+          name: state.fileName + lname + "_" + num + ".dxf",
+          text: build([Object.assign(Object.create(pl), { layer: 0 })], [state.layers[pl.layer]])
+        };
+      });
+      downloadBlob(makeZip(files), state.fileName + "_krivky.zip");
+      return;
+    }
+
+    if (mode === "files") {
+      // samostatný soubor pro každou vrstvu (jen vrstvy přítomné ve zdroji)
+      var used = {};
+      source.forEach(function (pl) { used[pl.layer] = true; });
+      var usedIdx = Object.keys(used);
+      if (usedIdx.length > 1) {
+        usedIdx.forEach(function (li, k) {
+          var ly = state.layers[li];
+          var subset = source.filter(function (pl) { return pl.layer == li; })
+            .map(function (pl) { var c = Object.create(pl); c.layer = 0; return c; });
+          setTimeout(function () {
+            downloadDxf(build(subset, [ly]),
+              state.fileName + "_" + ly.name.toLowerCase() + ".dxf");
+          }, k * 400);
+        });
+        return;
+      }
+      showMsg("Jen jedna vrstva — stahuji jeden soubor.", "warn");
+    }
+
+    if (mode === "dxf") {
+      downloadDxf(buildDxfWithLayers(source), state.fileName + ".dxf");
+      return;
+    }
+
+    // vše dohromady: jediná vrstva "0"
+    downloadDxf(build(source, []), state.fileName + ".dxf");
+  });
+})();
+</script>
+</body>
+</html>

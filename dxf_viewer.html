@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DXF prohlížeč</title>
+<style>
+  :root {
+    --bg: #171A1E;
+    --panel: #1F242A;
+    --panel-edge: #2C333B;
+    --ink: #E9ECEF;
+    --ink-dim: #9AA5B0;
+    --steel: #7FA6C9;
+    --cut: #FF5A38;
+    --grid: rgba(127, 166, 201, 0.10);
+    --grid-major: rgba(127, 166, 201, 0.22);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    padding: 24px 16px 48px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px; flex-wrap: wrap; }
+  h1 { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 26px; font-weight: 600; letter-spacing: 0.04em; }
+  h1 .mark { color: var(--cut); }
+  header .sub { color: var(--ink-dim); font-size: 14px; }
+  .privacy { color: var(--ink-dim); font-size: 12.5px; margin-bottom: 22px; }
+  .privacy b { color: var(--steel); font-weight: 500; }
+
+  #dropzone {
+    border: 1.5px dashed var(--panel-edge);
+    border-radius: 10px;
+    background: var(--panel);
+    padding: 46px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  #dropzone:hover, #dropzone.drag { border-color: var(--steel); background: #232A31; }
+  #dropzone:focus-visible { outline: 2px solid var(--steel); outline-offset: 2px; }
+  #dropzone .big { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 17px; margin-bottom: 6px; }
+  #dropzone .hint { color: var(--ink-dim); font-size: 13.5px; }
+  #fileInput { display: none; }
+
+  #workspace { display: none; margin-top: 20px; }
+  #viewport {
+    background:
+      linear-gradient(var(--grid-major) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+      #14171B;
+    background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+    border: 1px solid var(--panel-edge);
+    border-radius: 10px 10px 0 0;
+    position: relative;
+    overflow: hidden;
+  }
+  #preview { display: block; width: 100%; height: 480px; cursor: grab; touch-action: none; }
+  #preview.panning { cursor: grabbing; }
+  #coords {
+    position: absolute; right: 10px; bottom: 8px;
+    font-family: Consolas, 'Cascadia Mono', monospace; font-size: 12px;
+    color: var(--steel); background: rgba(23,26,30,0.75);
+    padding: 3px 8px; border-radius: 5px; pointer-events: none;
+  }
+  #readout {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    padding: 12px 16px;
+    font-family: Consolas, 'Cascadia Mono', monospace;
+    font-size: 13px;
+    display: flex; gap: 26px; flex-wrap: wrap; align-items: center;
+  }
+  #readout .cell .lbl { color: var(--ink-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+  #readout .cell .val { color: var(--steel); font-size: 15px; margin-top: 2px; }
+
+  #layerList { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--panel); border: 1px solid var(--panel-edge);
+    border-radius: 7px; padding: 7px 12px; cursor: pointer;
+    font-family: Consolas, 'Cascadia Mono', monospace; font-size: 13px;
+    user-select: none;
+  }
+  .chip .sw { width: 11px; height: 11px; border-radius: 3px; }
+  .chip.off { opacity: 0.38; }
+  .chip:hover { border-color: var(--steel); }
+
+  .controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+  .btn {
+    background: none; border: 1px solid var(--panel-edge); color: var(--ink-dim);
+    border-radius: 7px; padding: 10px 16px; cursor: pointer; font-size: 13.5px;
+  }
+  .btn:hover { color: var(--ink); border-color: var(--steel); }
+  .btn.primary {
+    background: var(--cut); color: #1A0D08; border: none;
+    font-family: 'Segoe UI', system-ui, sans-serif; font-weight: 600; font-size: 15px;
+  }
+  .hintline { color: var(--ink-dim); font-size: 12.5px; margin-left: auto; }
+
+  #msg { margin-top: 14px; font-size: 13.5px; border-radius: 7px; padding: 10px 14px; display: none; }
+  #msg.warn { display: block; background: rgba(255, 90, 56, 0.12); color: #FFB4A3; }
+  #msg.err  { display: block; background: rgba(255, 90, 56, 0.20); color: #FF8A70; }
+
+  footer { margin-top: 34px; color: var(--ink-dim); font-size: 12.5px; line-height: 1.6; }
+  footer code { font-family: Consolas, 'Cascadia Mono', monospace; color: var(--steel); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>DXF <span class="mark">prohlížeč</span></h1>
+    <span class="sub">kontrola exportu · vrstvy · rozměry</span>
+  </header>
+  <p class="privacy">Vše probíhá <b>ve vašem prohlížeči</b> — soubor se nikam neodesílá.</p>
+
+  <div id="dropzone" tabindex="0" role="button" aria-label="Nahrát DXF soubor">
+    <div class="big">Přetáhněte sem DXF soubor</div>
+    <div class="hint">nebo klikněte pro výběr · LINE, CIRCLE, ARC, POLYLINE, LWPOLYLINE</div>
+  </div>
+  <input type="file" id="fileInput" accept=".dxf">
+
+  <div id="workspace">
+    <div id="viewport">
+      <canvas id="preview"></canvas>
+      <div id="coords">x: – y: –</div>
+    </div>
+    <div id="readout">
+      <div class="cell"><div class="lbl">Entit</div><div class="val" id="roEnt">–</div></div>
+      <div class="cell"><div class="lbl">Vrstev</div><div class="val" id="roLay">–</div></div>
+      <div class="cell"><div class="lbl">Rozměr</div><div class="val" id="roSize">–</div></div>
+      <div class="cell"><div class="lbl">Rozsah X</div><div class="val" id="roX">–</div></div>
+      <div class="cell"><div class="lbl">Rozsah Y</div><div class="val" id="roY">–</div></div>
+    </div>
+
+    <div id="layerList"></div>
+
+    <div class="controls">
+      <button class="btn" id="fitBtn">Přizpůsobit oknu</button>
+      <button class="btn" id="againBtn">Jiný soubor</button>
+      <span class="hintline">kolečko = zoom · tažení = posun · dvojklik = přizpůsobit</span>
+    </div>
+  </div>
+
+  <div id="msg"></div>
+
+  <footer>
+    Podporované entity: <code>LINE</code>, <code>CIRCLE</code>, <code>ARC</code>,
+    <code>POLYLINE</code>/<code>VERTEX</code>, <code>LWPOLYLINE</code> (včetně oblouků/bulge), <code>POINT</code>.<br>
+    Barvy vrstev se čtou z tabulky <code>LAYER</code> (ACI kódy). Kliknutím na vrstvu ji skryjete/zobrazíte.<br>
+    Jednotky se zobrazují jako <code>mm</code>.
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var dropzone = document.getElementById("dropzone");
+  var fileInput = document.getElementById("fileInput");
+  var workspace = document.getElementById("workspace");
+  var canvas = document.getElementById("preview");
+  var coordsEl = document.getElementById("coords");
+  var msg = document.getElementById("msg");
+
+  var state = {
+    entities: [],       // { layer, color(aci|null), polys: [[ [x,y],... ]] }
+    layers: {},         // name -> { aci, hex, visible }
+    layerOrder: [],
+    bbox: null,         // {minX,minY,maxX,maxY}
+    view: { k: 1, ox: 0, oy: 0 }  // world->screen: sx = ox + x*k ; sy = oy - y*k
+  };
+
+  function showMsg(text, cls) { msg.textContent = text || ""; msg.className = cls || ""; }
+
+  // ---------- ACI barvy ----------
+  var ACI_HEX = {
+    1: "#FF4136", 2: "#FFDC00", 3: "#2ECC40", 4: "#3FE0E0", 5: "#5B8CFF",
+    6: "#F06EFF", 7: "#E9ECEF", 8: "#808890", 9: "#C0C6CC",
+    30: "#FF9F0A", 90: "#37C871", 150: "#4DA3FF", 210: "#B96CFF"
+  };
+  function aciToHex(aci) {
+    if (ACI_HEX[aci]) return ACI_HEX[aci];
+    if (!aci || aci < 1 || aci > 255) return "#E9ECEF";
+    // hrubá aproximace zbytku palety: odstín podle desítky
+    var hue = ((Math.floor(aci / 10) * 24) % 360);
+    return "hsl(" + hue + ", 75%, 62%)";
+  }
+
+  // ---------- parser DXF ----------
+  function parseDxf(text) {
+    var lines = text.split(/\r\n|\n|\r/);
+    var pairs = [];
+    for (var i = 0; i + 1 < lines.length; i += 2) {
+      var code = parseInt(lines[i], 10);
+      if (isNaN(code)) { i--; continue; } // tolerance k lichým řádkům
+      pairs.push({ c: code, v: lines[i + 1] });
+    }
+
+    var layers = {};   // name -> aci
+    var entities = [];
+    var section = "";
+    var p = 0;
+
+    function num(v) { return parseFloat(v); }
+
+    while (p < pairs.length) {
+      var pr = pairs[p];
+
+      if (pr.c === 0 && pr.v === "SECTION") {
+        section = (pairs[p + 1] && pairs[p + 1].c === 2) ? pairs[p + 1].v : "";
+        p += 2; continue;
+      }
+      if (pr.c === 0 && pr.v === "ENDSEC") { section = ""; p++; continue; }
+
+      if (section === "TABLES" && pr.c === 0 && pr.v === "LAYER") {
+        var lname = null, laci = 7;
+        p++;
+        while (p < pairs.length && pairs[p].c !== 0) {
+          if (pairs[p].c === 2) lname = pairs[p].v;
+          if (pairs[p].c === 62) laci = Math.abs(parseInt(pairs[p].v, 10)) || 7;
+          p++;
+        }
+        if (lname !== null) layers[lname] = laci;
+        continue;
+      }
+
+      if (section === "ENTITIES" && pr.c === 0) {
+        var type = pr.v;
+        p++;
+        var e = { type: type, layer: "0", color: null };
+        var verts = [];      // pro LWPOLYLINE: {x,y,b}
+        var props = {};
+
+        function grab(stopAtZero) {
+          while (p < pairs.length && pairs[p].c !== 0) {
+            var c = pairs[p].c, v = pairs[p].v;
+            if (c === 8) e.layer = v;
+            else if (c === 62) e.color = parseInt(v, 10);
+            else if (c === 10) verts.push({ x: num(v), y: 0, b: 0 });
+            else if (c === 20) { if (verts.length) verts[verts.length - 1].y = num(v); }
+            else if (c === 42) { if (verts.length) verts[verts.length - 1].b = num(v); }
+            else props[c] = num(v);
+            p++;
+          }
+        }
+
+        if (type === "LINE") {
+          // LINE má 10/20 a 11/21 — 11/21 skončí v props
+          grab();
+          if (verts.length >= 1 && props[11] !== undefined && props[21] !== undefined) {
+            entities.push(mkEntity(e, [[[verts[0].x, verts[0].y], [props[11], props[21]]]]));
+          }
+        } else if (type === "CIRCLE") {
+          grab();
+          if (verts.length >= 1 && props[40] > 0) {
+            entities.push(mkEntity(e, [sampleArc(verts[0].x, verts[0].y, props[40], 0, 360, true)]));
+          }
+        } else if (type === "ARC") {
+          grab();
+          if (verts.length >= 1 && props[40] > 0) {
+            entities.push(mkEntity(e, [sampleArc(verts[0].x, verts[0].y, props[40],
+              props[50] || 0, props[51] !== undefined ? props[51] : 360, false)]));
+          }
+        } else if (type === "LWPOLYLINE") {
+          grab();
+          var closedLw = ((props[70] || 0) & 1) === 1;
+          entities.push(mkEntity(e, [vertsToPoints(verts, closedLw)]));
+        } else if (type === "POLYLINE") {
+          grab(); // hlavička
+          var pverts = [];
+          var closedP = ((props[70] || 0) & 1) === 1;
+          while (p < pairs.length) {
+            if (pairs[p].c === 0 && pairs[p].v === "VERTEX") {
+              p++;
+              var vv = { x: 0, y: 0, b: 0 };
+              while (p < pairs.length && pairs[p].c !== 0) {
+                if (pairs[p].c === 10) vv.x = num(pairs[p].v);
+                else if (pairs[p].c === 20) vv.y = num(pairs[p].v);
+                else if (pairs[p].c === 42) vv.b = num(pairs[p].v);
+                p++;
+              }
+              pverts.push(vv);
+            } else if (pairs[p].c === 0 && pairs[p].v === "SEQEND") {
+              p++;
+              while (p < pairs.length && pairs[p].c !== 0) p++;
+              break;
+            } else break;
+          }
+          entities.push(mkEntity(e, [vertsToPoints(pverts, closedP)]));
+        } else if (type === "POINT") {
+          grab();
+          if (verts.length >= 1) {
+            entities.push(mkEntity(e, [[[verts[0].x, verts[0].y]]], true));
+          }
+        } else {
+          grab(); // neznámou entitu přeskočit
+        }
+        continue;
+      }
+      p++;
+    }
+    return { layers: layers, entities: entities.filter(function (e) { return e.polys.some(function (pl) { return pl.length >= 1; }); }) };
+  }
+
+  function mkEntity(e, polys, isPoint) {
+    return { layer: e.layer, color: e.color, polys: polys, isPoint: !!isPoint, type: e.type };
+  }
+
+  // vrcholy s bulge -> lomená čára
+  function vertsToPoints(verts, closed) {
+    var pts = [];
+    if (!verts.length) return pts;
+    var n = verts.length;
+    var segCount = closed ? n : n - 1;
+    pts.push([verts[0].x, verts[0].y]);
+    for (var i = 0; i < segCount; i++) {
+      var a = verts[i], b = verts[(i + 1) % n];
+      if (!a.b) {
+        pts.push([b.x, b.y]);
+      } else {
+        var arcPts = bulgeArc(a, b, a.b);
+        for (var j = 1; j < arcPts.length; j++) pts.push(arcPts[j]);
+      }
+    }
+    return pts;
+  }
+
+  // oblouk z bulge faktoru (b = tan(theta/4))
+  function bulgeArc(p1, p2, b) {
+    var theta = 4 * Math.atan(b);
+    var dx = p2.x - p1.x, dy = p2.y - p1.y;
+    var chord = Math.hypot(dx, dy);
+    if (chord < 1e-12) return [[p1.x, p1.y], [p2.x, p2.y]];
+    var r = chord / (2 * Math.sin(Math.abs(theta) / 2));
+    // střed: kolmice od středu tětivy
+    var mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+    var h = Math.sqrt(Math.max(0, r * r - (chord / 2) * (chord / 2)));
+    var s = (b > 0 ? 1 : -1) * (Math.abs(theta) > Math.PI ? -1 : 1);
+    var cx = mx - s * h * (dy / chord);
+    var cy = my + s * h * (dx / chord);
+    var a1 = Math.atan2(p1.y - cy, p1.x - cx);
+    var segs = Math.max(4, Math.ceil(Math.abs(theta) / (Math.PI / 48)));
+    var out = [];
+    for (var i = 0; i <= segs; i++) {
+      var a = a1 + theta * (i / segs);
+      out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+    return out;
+  }
+
+  function sampleArc(cx, cy, r, degStart, degEnd, full) {
+    var a1 = degStart * Math.PI / 180;
+    var a2 = degEnd * Math.PI / 180;
+    if (full) { a1 = 0; a2 = 2 * Math.PI; }
+    else if (a2 <= a1) a2 += 2 * Math.PI;   // ARC je vždy proti směru hodin
+    var sweep = a2 - a1;
+    var segs = Math.max(8, Math.ceil(sweep / (Math.PI / 48)));
+    var out = [];
+    for (var i = 0; i <= segs; i++) {
+      var a = a1 + sweep * (i / segs);
+      out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+    return out;
+  }
+
+  // ---------- načtení souboru ----------
+  function handleFile(file) {
+    if (!file) return;
+    if (!/\.dxf$/i.test(file.name)) {
+      showMsg("Tohle není DXF soubor.", "err");
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () { loadDxf(reader.result); };
+    reader.readAsText(file);
+  }
+
+  function loadDxf(text) {
+    showMsg("");
+    var parsed;
+    try { parsed = parseDxf(text); }
+    catch (err) { showMsg("DXF se nepodařilo přečíst: " + err.message, "err"); return; }
+
+    if (!parsed.entities.length) {
+      showMsg("V souboru nebyly nalezeny žádné podporované entity.", "err");
+      return;
+    }
+
+    // vrstvy: z tabulky + vrstvy použité entitami
+    state.layers = {};
+    state.layerOrder = [];
+    function ensureLayer(name) {
+      if (!state.layers[name]) {
+        var aci = parsed.layers[name] !== undefined ? parsed.layers[name] : 7;
+        state.layers[name] = { aci: aci, hex: aciToHex(aci), visible: true };
+        state.layerOrder.push(name);
+      }
+    }
+    Object.keys(parsed.layers).forEach(ensureLayer);
+    parsed.entities.forEach(function (e) { ensureLayer(e.layer); });
+
+    state.entities = parsed.entities;
+    state.bbox = computeBBox(state.entities, null);
+
+    if (!state.bbox) { showMsg("Entity neobsahují žádné souřadnice.", "err"); return; }
+
+    document.getElementById("roEnt").textContent = state.entities.length;
+    document.getElementById("roLay").textContent = state.layerOrder.length;
+    var w = state.bbox.maxX - state.bbox.minX, h = state.bbox.maxY - state.bbox.minY;
+    document.getElementById("roSize").textContent = w.toFixed(1) + " × " + h.toFixed(1) + " mm";
+    document.getElementById("roX").textContent = state.bbox.minX.toFixed(1) + " … " + state.bbox.maxX.toFixed(1);
+    document.getElementById("roY").textContent = state.bbox.minY.toFixed(1) + " … " + state.bbox.maxY.toFixed(1);
+
+    buildLayerChips();
+    workspace.style.display = "block";
+    fitView();
+  }
+
+  function computeBBox(entities, onlyVisible) {
+    var bb = null;
+    entities.forEach(function (e) {
+      if (onlyVisible && !state.layers[e.layer].visible) return;
+      e.polys.forEach(function (pl) {
+        pl.forEach(function (pt) {
+          if (!bb) bb = { minX: pt[0], maxX: pt[0], minY: pt[1], maxY: pt[1] };
+          else {
+            if (pt[0] < bb.minX) bb.minX = pt[0];
+            if (pt[0] > bb.maxX) bb.maxX = pt[0];
+            if (pt[1] < bb.minY) bb.minY = pt[1];
+            if (pt[1] > bb.maxY) bb.maxY = pt[1];
+          }
+        });
+      });
+    });
+    return bb;
+  }
+
+  // ---------- vrstvy UI ----------
+  function buildLayerChips() {
+    var list = document.getElementById("layerList");
+    list.innerHTML = "";
+    state.layerOrder.forEach(function (name) {
+      var ly = state.layers[name];
+      var chip = document.createElement("span");
+      chip.className = "chip" + (ly.visible ? "" : " off");
+      var sw = document.createElement("span");
+      sw.className = "sw";
+      sw.style.background = ly.hex;
+      chip.appendChild(sw);
+      chip.appendChild(document.createTextNode(name));
+      chip.addEventListener("click", function () {
+        ly.visible = !ly.visible;
+        chip.className = "chip" + (ly.visible ? "" : " off");
+        draw();
+      });
+      list.appendChild(chip);
+    });
+  }
+
+  // ---------- pohled / vykreslení ----------
+  function fitView() {
+    var cssW = canvas.clientWidth, cssH = 480;
+    var bb = state.bbox;
+    var pad = 30;
+    var w = Math.max(bb.maxX - bb.minX, 1e-6);
+    var h = Math.max(bb.maxY - bb.minY, 1e-6);
+    var k = Math.min((cssW - 2 * pad) / w, (cssH - 2 * pad) / h);
+    state.view.k = k;
+    state.view.ox = (cssW - w * k) / 2 - bb.minX * k;
+    state.view.oy = cssH - ((cssH - h * k) / 2 - bb.minY * k);
+    draw();
+  }
+
+  function draw() {
+    var dpr = window.devicePixelRatio || 1;
+    var cssW = canvas.clientWidth, cssH = 480;
+    canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+    var ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    var v = state.view;
+    function sx(x) { return v.ox + x * v.k; }
+    function sy(y) { return v.oy - y * v.k; }
+
+    // osy (0,0)
+    ctx.strokeStyle = "rgba(127,166,201,0.4)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath(); ctx.moveTo(sx(0), 0); ctx.lineTo(sx(0), cssH); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, sy(0)); ctx.lineTo(cssW, sy(0)); ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.lineWidth = 1.3;
+    ctx.lineJoin = "round";
+    state.entities.forEach(function (e) {
+      var ly = state.layers[e.layer];
+      if (!ly.visible) return;
+      var col = (e.color && e.color > 0 && e.color < 256) ? aciToHex(e.color) : ly.hex;
+      ctx.strokeStyle = col;
+      ctx.fillStyle = col;
+      e.polys.forEach(function (pl) {
+        if (e.isPoint) {
+          ctx.beginPath();
+          ctx.arc(sx(pl[0][0]), sy(pl[0][1]), 2.5, 0, 2 * Math.PI);
+          ctx.fill();
+          return;
+        }
+        if (pl.length < 2) return;
+        ctx.beginPath();
+        for (var i = 0; i < pl.length; i++) {
+          var X = sx(pl[i][0]), Y = sy(pl[i][1]);
+          if (i === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+        }
+        ctx.stroke();
+      });
+    });
+  }
+
+  // ---------- interakce: zoom, posun, souřadnice ----------
+  canvas.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    var factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    zoomAt(mx, my, factor);
+  }, { passive: false });
+
+  function zoomAt(mx, my, factor) {
+    var v = state.view;
+    var wx = (mx - v.ox) / v.k;
+    var wy = (v.oy - my) / v.k;
+    v.k *= factor;
+    v.ox = mx - wx * v.k;
+    v.oy = my + wy * v.k;
+    draw();
+  }
+
+  var pan = null;
+  canvas.addEventListener("pointerdown", function (e) {
+    if (e.isPrimary === false) return;
+    pan = { x: e.clientX, y: e.clientY };
+    canvas.classList.add("panning");
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointermove", function (e) {
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    var v = state.view;
+    coordsEl.textContent = "x: " + ((mx - v.ox) / v.k).toFixed(2) +
+      "  y: " + ((v.oy - my) / v.k).toFixed(2);
+    if (pan) {
+      v.ox += e.clientX - pan.x;
+      v.oy += e.clientY - pan.y;
+      pan = { x: e.clientX, y: e.clientY };
+      draw();
+    }
+  });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(function (ev) {
+    canvas.addEventListener(ev, function () { pan = null; canvas.classList.remove("panning"); });
+  });
+  canvas.addEventListener("dblclick", function () { fitView(); });
+
+  // pinch zoom na dotykových zařízeních
+  var pinch = null;
+  canvas.addEventListener("touchstart", function (e) {
+    if (e.touches.length === 2) {
+      pan = null;
+      pinch = dist2(e.touches);
+    }
+  }, { passive: true });
+  canvas.addEventListener("touchmove", function (e) {
+    if (e.touches.length === 2 && pinch) {
+      e.preventDefault();
+      var d = dist2(e.touches);
+      var rect = canvas.getBoundingClientRect();
+      var cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+      var cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+      zoomAt(cx, cy, d / pinch);
+      pinch = d;
+    }
+  }, { passive: false });
+  canvas.addEventListener("touchend", function () { pinch = null; });
+  function dist2(t) { return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY); }
+
+  // ---------- ovládací prvky ----------
+  dropzone.addEventListener("click", function () { fileInput.click(); });
+  dropzone.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+  });
+  fileInput.addEventListener("change", function () { handleFile(fileInput.files[0]); fileInput.value = ""; });
+  ["dragover", "dragenter"].forEach(function (ev) {
+    dropzone.addEventListener(ev, function (e) { e.preventDefault(); dropzone.classList.add("drag"); });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    dropzone.addEventListener(ev, function (e) { e.preventDefault(); dropzone.classList.remove("drag"); });
+  });
+  dropzone.addEventListener("drop", function (e) {
+    handleFile(e.dataTransfer.files && e.dataTransfer.files[0]);
+  });
+  document.getElementById("fitBtn").addEventListener("click", fitView);
+  document.getElementById("againBtn").addEventListener("click", function () {
+    workspace.style.display = "none";
+    showMsg("");
+    fileInput.click();
+  });
+  window.addEventListener("resize", function () {
+    if (workspace.style.display === "block") draw();
+  });
+})();
+</script>
+</body>
+</html>
