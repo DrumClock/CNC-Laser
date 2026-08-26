@@ -10,7 +10,9 @@ Stáhněte příslušný `.html` soubor a otevřete ho dvojklikem v prohlížeč
 
 ## Nástroje
 
-### svg2dxf.html — převodník SVG → DXF
+---
+
+### 🔧 svg2dxf.html — převodník SVG → DXF
 
 ![svg2dxf](screenshots/svg2dxf.png)
 
@@ -28,7 +30,9 @@ Výstup je standardně **DXF R12** s entitami POLYLINE — nejkompatibilnější
 
 > **Poznámka:** Text v Corelu před exportem převeďte na křivky (`Ctrl+Q`), jinak se nepřenese. Zaoblené rohy, které Corel občas exportuje deformovaně, také vyřeší převod na křivky.
 
-### dxf_viewer.html — prohlížeč DXF
+---
+
+### 🔍 dxf_viewer.html — prohlížeč DXF
 
 ![dxf_viewer](screenshots/dxf_viewer.png)
 
@@ -39,7 +43,9 @@ Kontrola hotového DXF před posláním do stroje.
 - Vrstvy barevně odlišené, lze je skrývat/zobrazovat
 - Podporuje POLYLINE, LWPOLYLINE (i s oblouky), LINE, CIRCLE, ARC, POINT
 
-### image_tool.html — výřez a konverze obrázků
+---
+
+### 🖼️ image_tool.html — výřez a konverze obrázků
 
 ![image_tool](screenshots/image_tool.png)
 
@@ -51,7 +57,9 @@ Kontrola hotového DXF před posláním do stroje.
 - Volba kvality u JPG/WEBP, průhlednost u PNG/WEBP
 - **Černobílý režim pro laser**: převod na čistě 2 barvy (černá + bílá) s nastavitelným prahem, možností invertování a rozptylu (dithering) pro fotky
 
-### step-iges-viewer-offline.html — prohlížeč 3D modelů
+---
+
+### 🧊 step-iges-viewer-offline.html — prohlížeč 3D modelů
 
 ![step-iges](screenshots/step_iges.png)
 
